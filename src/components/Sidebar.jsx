@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Smartphone, Users, Send, ListChecks, CreditCard, MessageSquare, LogOut, Megaphone, UserCircle } from 'lucide-react';
+import { LayoutDashboard, Key, Smartphone, Users, Send, ListChecks, CreditCard, MessageSquare, LogOut, Megaphone, UserCircle, BookOpen } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const links = [
@@ -10,13 +10,17 @@ const links = [
   { to: '/campanhas', label: 'Campanhas', icon: Megaphone },
   { to: '/fila', label: 'Fila/Histórico', icon: ListChecks },
   { to: '/planos', label: 'Planos', icon: CreditCard },
+  { to: '/api-tokens', label: 'Integrações / API', icon: Key },
+  { to: '/docs', label: 'Documentação & API', icon: BookOpen },
   { to: '/perfil', label: 'Perfil / Planos', icon: UserCircle },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen = false, onClose }) {
   const { signOut } = useAuth();
   return (
-    <aside className="hidden md:flex w-60 shrink-0 flex-col bg-surface border-r border-white/5">
+    <>
+    {mobileOpen && <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={onClose} aria-hidden="true" />}
+    <aside className={`${mobileOpen ? 'fixed inset-y-0 left-0 z-40 flex shadow-2xl' : 'hidden'} md:static md:z-auto md:flex md:shadow-none w-60 shrink-0 flex-col bg-surface border-r border-white/5`}>
       <div className="flex items-center gap-2 px-5 py-5">
         <div className="h-9 w-9 rounded-lg bg-accent/15 text-accent flex items-center justify-center">
           <MessageSquare size={20} />
@@ -30,6 +34,7 @@ export default function Sidebar() {
             key={to}
             to={to}
             end={end}
+            onClick={onClose}
             className={({ isActive }) =>
               `flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${
                 isActive ? 'bg-accent/15 text-accent' : 'text-slate-300 hover:bg-white/5'
@@ -45,5 +50,6 @@ export default function Sidebar() {
         <LogOut size={18} /> Sair
       </button>
     </aside>
+    </>
   );
 }

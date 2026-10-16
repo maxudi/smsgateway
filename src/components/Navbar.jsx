@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Crown, ArrowUp, ArrowDown, ShieldCheck } from 'lucide-react';
+import { Crown, ArrowUp, ArrowDown, ShieldCheck, Menu } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext.jsx';
 
-export default function Navbar() {
+export default function Navbar({ onMenuClick }) {
   const { profile, plan, user, isMaster } = useAuth();
   const [month, setMonth] = useState({ sent: 0, received: 0 });
   const used = month.sent;
@@ -30,7 +30,13 @@ export default function Navbar() {
 
   return (
     <header className="h-16 shrink-0 flex items-center justify-between gap-4 px-6 bg-surface/60 border-b border-white/5">
-      <div className="text-sm text-slate-400 truncate">{profile?.name || user?.email}</div>
+      <div className="flex min-w-0 items-center gap-3">
+        <button type="button" onClick={onMenuClick} aria-label="Abrir menu"
+          className="md:hidden rounded-lg p-2 text-slate-300 hover:bg-white/5">
+          <Menu size={22} />
+        </button>
+        <div className="text-sm text-slate-400 truncate">{profile?.name || user?.email}</div>
+      </div>
 
       <div className="flex items-center gap-5">
         <div className="hidden sm:block w-56">

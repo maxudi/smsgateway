@@ -43,7 +43,7 @@ npx supabase functions deploy create-checkout-session
 npx supabase functions deploy stripe-webhook
 ```
 
-No painel do Stripe, o webhook aponta para `https://<projeto>.supabase.co/functions/v1/stripe-webhook`
+No painel do Stripe, o webhook aponta para `https://api.smsmax.netminas.com/functions/v1/stripe-webhook`
 (eventos `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`).
 O Supabase injeta `SUPABASE_URL`, `SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY` nas funções.
 
