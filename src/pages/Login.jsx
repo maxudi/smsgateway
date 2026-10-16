@@ -1,30 +1,50 @@
 import { useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { MessageSquare } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function Login() {
   const { session } = useAuth();
+  const navigate = useNavigate();
   const [mode, setMode] = useState('login');
   const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
 
   if (session) return <Navigate to="/" replace />;
 
   const submit = async (e) => {
     e.preventDefault();
-    setBusy(true); setError('');
-    const { error: err } = mode === 'login'
-      ? await supabase.auth.signInWithPassword({ email: form.email, password: form.password })
-      : await supabase.auth.signUp({
-          email: form.email,
-          password: form.password,
-          options: { data: { name: form.name } },
-        });
-    if (err) setError(err.message);
-    setBusy(false);
+    setBusy(true); setError(''); setNotice('');
+    try {
+      if (mode === 'login') {
+        const { error: err } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
+        if (err) setError(err.message);
+        return;
+      }
+
+      const { data, error: err } = await supabase.auth.signUp({
+        email: form.email,
+        password: form.password,
+        options: { data: { name: form.name } },
+      });
+      if (err) {
+        setError(err.message);
+      } else if (data.session) {
+        navigate('/', { replace: true }); // o dashboard fica na rota raiz
+      } else if (data.user) {
+        // Confirmação de e-mail exigida: sem sessão até o usuário clicar no link
+        setNotice('Conta criada com sucesso! Verifique sua caixa de entrada para confirmar o e-mail antes de fazer login.');
+        setMode('login');
+        setForm((f) => ({ ...f, password: '' }));
+      }
+    } catch (err) {
+      setError(err?.message ?? 'Não foi possível concluir a operação. Tente novamente.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -42,6 +62,7 @@ export default function Login() {
         <div><label className="label">Senha</label>
           <input type="password" minLength={6} className="input" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
         {error && <p className="text-sm text-danger">{error}</p>}
+        {notice && <p className="text-sm text-success">{notice}</p>}
         <button className="btn-primary w-full" disabled={busy}>{mode === 'login' ? 'Entrar' : 'Criar conta'}</button>
         <button type="button" className="text-xs text-slate-400 w-full hover:text-accent"
           onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}>
