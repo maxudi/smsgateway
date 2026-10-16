@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Smartphone, Download } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
 import LegalTermsModal from '../components/LegalTermsModal.jsx';
 
 export default function Login({ initialMode }) {
   const { session } = useAuth();
+  const { lang, setLang, t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -71,7 +73,7 @@ export default function Login({ initialMode }) {
 
       // Validação de segurança no cadastro
       if (!acceptedTerms) {
-        setError('Você deve concordar com os Termos de Uso e Política de Privacidade (LGPD) para criar sua conta.');
+        setError(t('auth.termsRequiredError'));
         return;
       }
 
@@ -107,118 +109,179 @@ export default function Login({ initialMode }) {
         if (data.session) {
           navigate('/', { replace: true });
         } else if (data.user) {
-          // Confirmação de e-mail exigida
-          setNotice('Conta criada com sucesso! Verifique sua caixa de entrada para confirmar o e-mail antes de fazer login.');
+          setNotice(t('auth.signupSuccessNotice'));
           switchMode('login');
           setForm((f) => ({ ...f, password: '' }));
         }
       }
     } catch (err) {
       console.error('Falha no processo de autenticação:', err);
-      setError(err?.message ?? 'Não foi possível concluir a operação. Tente novamente.');
+      setError(err?.message ?? t('auth.authGenericError'));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <form onSubmit={submit} className="card w-full max-w-sm space-y-4 shadow-2xl border border-white/5">
-        <div className="flex items-center gap-2 justify-center text-white text-xl font-bold tracking-tight">
-          <MessageSquare className="text-accent" /> Max <span className="text-accent">Netminas</span>
-        </div>
+    <div className="min-h-screen flex items-center justify-center p-4 relative">
+      {/* Alternador de Idioma Flutuante */}
+      <div className="absolute top-4 right-4 z-10 flex items-center bg-surface border border-white/10 rounded-xl p-0.5 shadow-lg">
+        <button
+          type="button"
+          onClick={() => setLang('en')}
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
+            lang === 'en'
+              ? 'bg-accent/20 text-accent border border-accent/30 shadow-sm'
+              : 'text-slate-400 hover:text-white'
+          }`}
+          title="Switch to English"
+        >
+          <span>🇺🇸</span>
+          <span className="font-mono text-[11px]">EN</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setLang('pt')}
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
+            lang === 'pt'
+              ? 'bg-accent/20 text-accent border border-accent/30 shadow-sm'
+              : 'text-slate-400 hover:text-white'
+          }`}
+          title="Mudar para Português (Brasil)"
+        >
+          <span>🇧🇷</span>
+          <span className="font-mono text-[11px]">PT-BR</span>
+        </button>
+      </div>
 
-        {mode === 'signup' && (
+      <div className="w-full max-w-sm space-y-4">
+        <form onSubmit={submit} className="card w-full space-y-4 shadow-2xl border border-white/5">
+          <div className="flex items-center gap-2 justify-center text-white text-xl font-bold tracking-tight">
+            <MessageSquare className="text-accent" /> Max <span className="text-accent">Netminas</span>
+          </div>
+
+          {mode === 'signup' && (
+            <div>
+              <label className="label">{t('auth.nameLabel')}</label>
+              <input 
+                className="input" 
+                required 
+                value={form.name} 
+                onChange={(e) => setForm({ ...form, name: e.target.value })} 
+                placeholder={t('auth.namePlaceholder')}
+              />
+            </div>
+          )}
+
           <div>
-            <label className="label">Nome / Razão Social</label>
+            <label className="label">{t('auth.emailLabel')}</label>
             <input 
+              type="email" 
               className="input" 
               required 
-              value={form.name} 
-              onChange={(e) => setForm({ ...form, name: e.target.value })} 
-              placeholder="Seu nome completo ou empresa"
+              value={form.email} 
+              onChange={(e) => setForm({ ...form, email: e.target.value })} 
+              placeholder={t('auth.emailPlaceholder')}
             />
           </div>
-        )}
 
-        <div>
-          <label className="label">E-mail</label>
-          <input 
-            type="email" 
-            className="input" 
-            required 
-            value={form.email} 
-            onChange={(e) => setForm({ ...form, email: e.target.value })} 
-            placeholder="seu@email.com"
-          />
-        </div>
-
-        <div>
-          <label className="label">Senha</label>
-          <input 
-            type="password" 
-            minLength={6} 
-            className="input" 
-            required 
-            value={form.password} 
-            onChange={(e) => setForm({ ...form, password: e.target.value })} 
-            placeholder="Mínimo 6 caracteres"
-          />
-        </div>
-
-        {/* Checkbox de Conformidade LGPD e Termos de Serviço */}
-        {mode === 'signup' && (
-          <div className="pt-1">
-            <label className="flex items-start gap-2.5 cursor-pointer select-none group">
-              <input
-                type="checkbox"
-                id="terms-checkbox"
-                required
-                checked={acceptedTerms}
-                onChange={(e) => setAcceptedTerms(e.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-white/20 bg-surface text-accent focus:ring-accent focus:ring-offset-bg cursor-pointer shrink-0"
-              />
-              <span className="text-xs text-slate-300 leading-snug">
-                Li e concordo com os{' '}
-                <button
-                  type="button"
-                  onClick={() => openTermsModal('terms')}
-                  className="text-accent underline hover:text-accent/80 font-medium inline transition"
-                >
-                  Termos de Uso e Serviço
-                </button>{' '}
-                e com a{' '}
-                <button
-                  type="button"
-                  onClick={() => openTermsModal('privacy')}
-                  className="text-accent underline hover:text-accent/80 font-medium inline transition"
-                >
-                  Política de Privacidade (LGPD)
-                </button>.
-              </span>
-            </label>
+          <div>
+            <label className="label">{t('auth.passwordLabel')}</label>
+            <input 
+              type="password" 
+              minLength={6} 
+              className="input" 
+              required 
+              value={form.password} 
+              onChange={(e) => setForm({ ...form, password: e.target.value })} 
+              placeholder={t('auth.passwordPlaceholder')}
+            />
           </div>
-        )}
 
-        {error && <p className="text-sm text-danger bg-danger/10 p-3 rounded-lg border border-danger/20">{error}</p>}
-        {notice && <p className="text-sm text-success bg-emerald-500/10 p-3 rounded-lg border border-emerald-500/20">{notice}</p>}
+          {/* Checkbox de Conformidade LGPD e Termos de Serviço */}
+          {mode === 'signup' && (
+            <div className="pt-1">
+              <label className="flex items-start gap-2.5 cursor-pointer select-none group">
+                <input
+                  type="checkbox"
+                  id="terms-checkbox"
+                  required
+                  checked={acceptedTerms}
+                  onChange={(e) => setAcceptedTerms(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-white/20 bg-surface text-accent focus:ring-accent focus:ring-offset-bg cursor-pointer shrink-0"
+                />
+                <span className="text-xs text-slate-300 leading-snug">
+                  {t('auth.termsConsentText')}{' '}
+                  <button
+                    type="button"
+                    onClick={() => openTermsModal('terms')}
+                    className="text-accent underline hover:text-accent/80 font-medium inline transition"
+                  >
+                    {t('auth.termsLinkText')}
+                  </button>{' '}
+                  {t('auth.andText')}{' '}
+                  <button
+                    type="button"
+                    onClick={() => openTermsModal('privacy')}
+                    className="text-accent underline hover:text-accent/80 font-medium inline transition"
+                  >
+                    {t('auth.privacyLinkText')}
+                  </button>.
+                </span>
+              </label>
+            </div>
+          )}
 
-        <button 
-          type="submit"
-          className="btn-primary w-full shadow-lg shadow-accent/10 transition" 
-          disabled={busy || (mode === 'signup' && !acceptedTerms)}
-        >
-          {busy ? 'Processando...' : mode === 'login' ? 'Entrar' : 'Criar Conta'}
-        </button>
+          {error && <p className="text-sm text-danger bg-danger/10 p-3 rounded-lg border border-danger/20">{error}</p>}
+          {notice && <p className="text-sm text-success bg-emerald-500/10 p-3 rounded-lg border border-emerald-500/20">{notice}</p>}
 
-        <button 
-          type="button" 
-          className="text-xs text-slate-400 w-full hover:text-accent transition pt-1"
-          onClick={() => switchMode(mode === 'login' ? 'signup' : 'login')}
-        >
-          {mode === 'login' ? 'Não tem conta? Cadastre-se' : 'Já tem conta? Entrar'}
-        </button>
-      </form>
+          <button 
+            type="submit" 
+            className="btn-primary w-full shadow-lg shadow-accent/10 transition" 
+            disabled={busy || (mode === 'signup' && !acceptedTerms)}
+          >
+            {busy ? t('auth.processing') : mode === 'login' ? t('auth.loginButton') : t('auth.signupButton')}
+          </button>
+
+          <button 
+            type="button" 
+            className="text-xs text-slate-400 w-full hover:text-accent transition pt-1"
+            onClick={() => switchMode(mode === 'login' ? 'signup' : 'login')}
+          >
+            {mode === 'login' ? t('auth.noAccount') : t('auth.hasAccount')}
+          </button>
+        </form>
+
+        {/* Bloco de Download Direto do APK Android Oficial */}
+        <div className="card p-4 bg-surface/80 border border-white/10 hover:border-emerald-500/30 transition shadow-xl space-y-3">
+          <div className="flex items-center gap-3 text-left">
+            <div className="h-10 w-10 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/25 shadow-md">
+              <Smartphone size={20} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-semibold text-white tracking-wide flex items-center gap-1.5 flex-wrap">
+                <span>{t('auth.apkDownloadTitle')}</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold">
+                  APK
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-snug mt-0.5">
+                {t('auth.apkDownloadDesc')}
+              </p>
+            </div>
+          </div>
+          <a
+            href="https://api.smsmax.netminas.com/storage/v1/object/public/app/app-release.apk"
+            target="_blank"
+            rel="noopener noreferrer"
+            download="smsmax-gateway.apk"
+            className="w-full inline-flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold bg-white/5 hover:bg-emerald-500/20 text-slate-200 hover:text-emerald-300 border border-white/10 hover:border-emerald-500/40 transition shadow-sm group"
+          >
+            <Download size={14} className="group-hover:-translate-y-0.5 transition-transform text-emerald-400" />
+            <span>{t('auth.apkDownloadBtn')}</span>
+          </a>
+        </div>
+      </div>
 
       {/* Modal de Termos de Uso e LGPD */}
       <LegalTermsModal

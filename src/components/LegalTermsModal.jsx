@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { X, FileText, ShieldCheck, Check, AlertTriangle, Ban } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 export default function LegalTermsModal({ isOpen, onClose, onAccept, initialTab = 'terms' }) {
   const [activeTab, setActiveTab] = useState(initialTab);
+  const { t, lang } = useLanguage();
 
   if (!isOpen) return null;
 
@@ -17,17 +19,17 @@ export default function LegalTermsModal({ isOpen, onClose, onAccept, initialTab 
           <div>
             <h3 className="font-bold text-lg text-white flex items-center gap-2">
               <ShieldCheck className="text-accent" size={20} />
-              Conformidade Legal & LGPD
+              {t('terms.modalTitle')}
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Leia atentamente os termos e a política que regem o uso da plataforma SMSMax.
+              {t('terms.modalSubtitle')}
             </p>
           </div>
           <button 
             type="button"
             onClick={onClose} 
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition"
-            title="Fechar"
+            title={t('common.close')}
           >
             <X size={18} />
           </button>
@@ -45,7 +47,7 @@ export default function LegalTermsModal({ isOpen, onClose, onAccept, initialTab 
             }`}
           >
             <FileText size={15} />
-            <span>Termos de Uso e Serviço</span>
+            <span>{t('terms.tabTerms')}</span>
           </button>
           <button
             type="button"
@@ -57,7 +59,7 @@ export default function LegalTermsModal({ isOpen, onClose, onAccept, initialTab 
             }`}
           >
             <ShieldCheck size={15} />
-            <span>Política de Privacidade (LGPD)</span>
+            <span>{t('terms.tabPrivacy')}</span>
           </button>
         </div>
 
@@ -66,86 +68,85 @@ export default function LegalTermsModal({ isOpen, onClose, onAccept, initialTab 
           {activeTab === 'terms' ? (
             <div className="space-y-5">
               <div className="space-y-1.5">
-                <h4 className="font-semibold text-white text-base">1. Natureza da Plataforma (Objeto)</h4>
+                <h4 className="font-semibold text-white text-base">{t('terms.t1Title')}</h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  O <strong>SMSMax</strong> (Max Netminas) é estritamente uma plataforma de software como serviço (SaaS), atuando como middleware e gestor de filas inteligentes para despacho de SMS através de dispositivos Android Gateway próprios do usuário (via API e Webhooks). O SMSMax <strong>NÃO</strong> é operadora de telecomunicações, concessionária pública nem prestadora de Serviços Móveis Pessoais (SMP) ou agregadora de tráfego de telecomunicações.
+                  {t('terms.t1Text')}
                 </p>
               </div>
 
               <div className="space-y-1.5">
-                <h4 className="font-semibold text-white text-base">2. Custos Operacionais e Conectividade</h4>
+                <h4 className="font-semibold text-white text-base">{t('terms.t2Title')}</h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  A aquisição de chips (SIM Card físico ou eSIM), aparelhos celulares, planos móveis, pacotes de SMS e tarifas de conexão cobradas pelas operadoras são de <strong>exclusiva responsabilidade e custo do usuário</strong>. O SMSMax não cobra por SMS enviado nem comercializa créditos ou pacotes de mensagens.
+                  {t('terms.t2Text')}
                 </p>
               </div>
 
               <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs space-y-1">
                 <div className="flex items-center gap-2 font-bold text-amber-200">
-                  <AlertTriangle size={16} /> Isenção Expressa por Bloqueios e Banimentos
+                  <AlertTriangle size={16} /> {t('terms.t3Title')}
                 </div>
                 <p className="text-slate-300 leading-relaxed">
-                  O SMSMax <strong>NÃO</strong> se responsabiliza por bloqueios, cancelamentos de contrato ou banimentos de chips/linhas executados por operadoras de telefonia móvel decorrentes de envio excessivo, denúncias de spam ou violação das políticas internas das referidas operadoras.
+                  {t('terms.t3Text')}
                 </p>
               </div>
 
               <div className="space-y-1.5">
-                <h4 className="font-semibold text-white text-base">3. Foco em IoT, M2M e Automações</h4>
+                <h4 className="font-semibold text-white text-base">{t('terms.t4Title')}</h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  O sistema foi projetado primariamente para telemetria, Internet das Coisas (IoT), microcontroladores (ESP32/Arduino), alertas de monitoramento e fluxos de automação. Não possui qualquer vínculo societário ou comercial com ferramentas de terceiros (como n8n, Make, Zapier, Typebot) nem com fabricantes de hardware, disponibilizando apenas integrações padronizadas via HTTP/REST e Webhook.
+                  {t('terms.t4Text')}
                 </p>
               </div>
 
               <div className="space-y-1.5">
-                <h4 className="font-semibold text-white text-base">4. Faturamento e Pagamentos</h4>
+                <h4 className="font-semibold text-white text-base">{t('terms.t5Title')}</h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  Todo o faturamento e cobrança de assinaturas é terceirizado via <strong>Stripe</strong>. Não há retenção ou armazenamento de dados de cartão de crédito no servidor do SMSMax.
+                  {t('terms.t5Text')}
                 </p>
               </div>
 
               <div className="p-3.5 rounded-lg bg-danger/10 border border-danger/30 text-xs space-y-1">
                 <div className="flex items-center gap-2 font-bold text-danger">
-                  <Ban size={16} /> Uso Proibido e Rescisão
+                  <Ban size={16} /> {t('terms.t6Title')}
                 </div>
                 <p className="text-slate-300 leading-relaxed">
-                  É expressamente vetada a utilização para envio de spam em massa não consentido, phishing, fraudes, golpes ou quaisquer práticas ilícitas. A infração enseja <strong>suspensão e banimento imediato da conta sem direito a reembolso</strong>, resguardando-se as comunicações cabíveis às autoridades judiciais.
+                  {t('terms.t6Text')}
                 </p>
               </div>
             </div>
           ) : (
             <div className="space-y-5">
               <div className="space-y-1.5">
-                <h4 className="font-semibold text-white text-base">1. Minimização de Dados (Art. 6º, III da LGPD - Lei 13.709/2018)</h4>
+                <h4 className="font-semibold text-white text-base">{t('terms.p1Title')}</h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  A coleta de dados é estritamente necessária ao funcionamento técnico do serviço:
-                </p>
-                <ul className="text-xs text-slate-300 list-disc list-inside space-y-1 pl-1">
-                  <li><strong>Para a conta do usuário:</strong> apenas e-mail, nome/razão social e hash criptografado de senha.</li>
-                  <li><strong>Para o envio de mensagens:</strong> apenas o número de telefone do destinatário, corpo do SMS e ID do dispositivo Android conectado.</li>
-                </ul>
-              </div>
-
-              <div className="space-y-1.5">
-                <h4 className="font-semibold text-white text-base">2. Dados Sensíveis e Financeiros</h4>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Não há coleta de dados bancários ou números de cartão de crédito (geridos integralmente pela Stripe sob certificação PCI-DSS) nem de dados biométricos ou sensíveis. O app Android do SMSMax <strong>não acessa</strong> a agenda de contatos, fotos, mídias ou dados confidenciais do aparelho do usuário.
+                  {t('terms.p1Text')}
                 </p>
               </div>
 
               <div className="space-y-1.5">
-                <h4 className="font-semibold text-white text-base">3. Bases Legais (Art. 7º da LGPD)</h4>
+                <h4 className="font-semibold text-white text-base">{t('terms.p2Title')}</h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  O tratamento de dados pessoais é fundamentado em:
+                  {t('terms.p2Text')}
                 </p>
-                <ul className="text-xs text-slate-300 list-disc list-inside space-y-1 pl-1">
-                  <li><strong>Execução de Contrato (Art. 7º, V):</strong> necessário para o processamento, gestão da fila e roteamento de SMS requisitado pelo titular.</li>
-                  <li><strong>Cumprimento de Obrigação Legal (Art. 7º, II):</strong> guarda de registros de conexão e autenticação nos termos do Marco Civil da Internet (Lei nº 12.965/2014).</li>
-                </ul>
               </div>
 
               <div className="space-y-1.5">
-                <h4 className="font-semibold text-white text-base">4. Direitos do Titular (Art. 18 da LGPD)</h4>
+                <h4 className="font-semibold text-white text-base">{t('terms.p3Title')}</h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  O usuário titular pode, a qualquer momento, solicitar o acesso, confirmação, correção, anonimização, bloqueio ou exclusão total de sua conta e dos registros de histórico de filas de SMS.
+                  {t('terms.p3Text')}
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <h4 className="font-semibold text-white text-base">{t('terms.p4Title')}</h4>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {t('terms.p4Text')}
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <h4 className="font-semibold text-white text-base">{t('terms.p5Title')}</h4>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {t('terms.p5Text')}
                 </p>
               </div>
             </div>
@@ -155,7 +156,7 @@ export default function LegalTermsModal({ isOpen, onClose, onAccept, initialTab 
         {/* Rodapé */}
         <div className="p-4 bg-surface border-t border-white/5 flex items-center justify-between gap-3">
           <span className="text-[11px] text-slate-400">
-            {activeTab === 'terms' ? 'Versão: Termos de Uso v1.0' : 'Versão: Política de Privacidade v1.0'}
+            {activeTab === 'terms' ? (lang === 'en' ? 'Document: Terms of Service v1.0' : 'Documento: Termos de Uso v1.0') : (lang === 'en' ? 'Document: Privacy Policy v1.0' : 'Documento: Política de Privacidade v1.0')}
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -163,7 +164,7 @@ export default function LegalTermsModal({ isOpen, onClose, onAccept, initialTab 
               onClick={onClose}
               className="btn-ghost text-xs px-3.5 py-1.5"
             >
-              Fechar
+              {t('common.close')}
             </button>
             <button
               type="button"
@@ -174,7 +175,7 @@ export default function LegalTermsModal({ isOpen, onClose, onAccept, initialTab 
               className="btn-primary text-xs px-4 py-1.5 flex items-center gap-1.5 shadow-md shadow-accent/10"
             >
               <Check size={14} />
-              <span>Entendi e Aceito</span>
+              <span>{t('terms.understandAndAccept')}</span>
             </button>
           </div>
         </div>

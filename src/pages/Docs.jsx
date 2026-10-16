@@ -3,9 +3,10 @@ import { Link } from 'react-router-dom';
 import {
   BookOpen, Terminal, Code2, Copy, Check, Smartphone,
   Layers, HelpCircle, ArrowRight, Shield, Zap,
-  CheckCircle2, RefreshCw, Cpu, ExternalLink, Globe
+  CheckCircle2, RefreshCw, Cpu, ExternalLink, Globe, Download
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 const ENDPOINT_URL = 'https://api.smsmax.netminas.com/functions/v1/send-sms';
 
@@ -271,10 +272,10 @@ const i18n = {
 
 export default function Docs({ standalone = false }) {
   const { session } = useAuth();
-  const [lang, setLang] = useState('en');
+  const { lang, setLang } = useLanguage();
   const [copiedKey, setCopiedKey] = useState(null);
 
-  const t = i18n[lang];
+  const t = i18n[lang] || i18n.en;
 
   const copyToClipboard = async (text, key) => {
     try {
@@ -480,6 +481,20 @@ export default function Docs({ standalone = false }) {
                 <p className="text-xs text-slate-300 leading-relaxed">
                   {st.desc}
                 </p>
+                {st.step === '2' && (
+                  <div className="pt-2">
+                    <a
+                      href="https://api.smsmax.netminas.com/storage/v1/object/public/app/app-release.apk"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      download="smsmax-gateway.apk"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 transition shadow-sm"
+                    >
+                      <Download size={13} />
+                      <span>{lang === 'en' ? 'Download APK (.apk)' : 'Baixar APK (.apk)'}</span>
+                    </a>
+                  </div>
+                )}
               </div>
             </div>
           ))}

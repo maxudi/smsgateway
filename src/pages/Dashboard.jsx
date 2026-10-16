@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Smartphone, Users, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 const count = async (table, filter) => {
   let q = supabase.from(table).select('*', { count: 'exact', head: true });
@@ -9,17 +10,11 @@ const count = async (table, filter) => {
   return c ?? 0;
 };
 
-const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-const SERIES = [
-  ['sent', 'Enviados', 'bg-success'],
-  ['received', 'Recebidos', 'bg-sky-400'],
-  ['failed', 'Falhas', 'bg-danger'],
-];
-const fmt = (n) => Number(n ?? 0).toLocaleString('pt-BR');
+const DEFAULT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** Normaliza monthly_evolution para 12 posições (jan a dez), aceitando mês numérico ou "AAAA-MM". */
-function normalizeMonthly(list) {
-  const out = MONTHS.map((label) => ({ label, sent: 0, received: 0, failed: 0 }));
+function normalizeMonthly(list, monthLabels = DEFAULT_MONTHS) {
+  const out = monthLabels.map((label) => ({ label, sent: 0, received: 0, failed: 0 }));
   (list ?? []).forEach((item, i) => {
     const raw = item.month ?? item.mes ?? i + 1;
     let n = typeof raw === 'string' && raw.includes('-') ? Number(raw.split('-')[1]) : Number(raw);
@@ -41,14 +36,14 @@ function normalizeChips(by) {
   return [0, 1].map((slot) => ({ slot, total: rows.filter((r) => r.slot === slot).reduce((a, r) => a + r.total, 0) }));
 }
 
-function MonthlyChart({ data }) {
-  const max = Math.max(1, ...data.flatMap((m) => SERIES.map(([k]) => m[k])));
+function MonthlyChart({ data, series, fmt }) {
+  const max = Math.max(1, ...data.flatMap((m) => series.map(([k]) => m[k])));
   return (
     <div>
       <div className="flex h-44 items-end gap-2">
         {data.map((m) => (
           <div key={m.label} className="flex h-full flex-1 items-end justify-center gap-0.5">
-            {SERIES.map(([k, label, cls]) => (
+            {series.map(([k, label, cls]) => (
               <div key={k} title={`${m.label} · ${label}: ${fmt(m[k])}`} className={`w-full max-w-[10px] rounded-t ${cls}`}
                 style={{ height: `${(m[k] / max) * 100}%`, minHeight: m[k] ? 2 : 0 }} />
             ))}
@@ -59,7 +54,7 @@ function MonthlyChart({ data }) {
         {data.map((m) => <span key={m.label} className="flex-1">{m.label}</span>)}
       </div>
       <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-400">
-        {SERIES.map(([k, label, cls]) => (
+        {series.map(([k, label, cls]) => (
           <span key={k} className="flex items-center gap-1"><span className={`h-2 w-2 rounded-full ${cls}`} />{label}</span>
         ))}
       </div>
@@ -67,7 +62,7 @@ function MonthlyChart({ data }) {
   );
 }
 
-function DeliveryDonut({ sent, failed }) {
+function DeliveryDonut({ sent, failed, t, fmt }) {
   const total = sent + failed;
   const pct = total ? Math.round((sent / total) * 100) : 0;
   const r = 52;
@@ -84,22 +79,29 @@ function DeliveryDonut({ sent, failed }) {
       </svg>
       <div className="space-y-2 text-sm">
         <div className="text-3xl font-bold text-white">{total ? `${pct}%` : '-'}</div>
-        <div className="text-xs text-slate-500">taxa de entrega</div>
-        <div className="flex items-center gap-2 text-slate-300"><span className="h-2 w-2 rounded-full bg-success" />Enviados: {fmt(sent)}</div>
-        <div className="flex items-center gap-2 text-slate-300"><span className="h-2 w-2 rounded-full bg-danger" />Falhas: {fmt(failed)}</div>
+        <div className="text-xs text-slate-500">{t('dashboard.deliveryRateSubtitle')}</div>
+        <div className="flex items-center gap-2 text-slate-300">
+          <span className="h-2 w-2 rounded-full bg-success" />
+          {t('dashboard.sent')}: {fmt(sent)}
+        </div>
+        <div className="flex items-center gap-2 text-slate-300">
+          <span className="h-2 w-2 rounded-full bg-danger" />
+          {t('dashboard.failed')}: {fmt(failed)}
+        </div>
       </div>
     </div>
   );
 }
 
-function ChipBars({ chips }) {
+function ChipBars({ chips, t, fmt }) {
   const max = Math.max(1, ...chips.map((c) => c.total));
   return (
     <div className="space-y-4">
       {chips.map((c) => (
         <div key={c.slot}>
           <div className="mb-1 flex justify-between text-sm text-slate-300">
-            <span>Slot {c.slot} (SIM {c.slot + 1})</span><span>{fmt(c.total)}</span>
+            <span>{t('dashboard.slot')} {c.slot} (SIM {c.slot + 1})</span>
+            <span>{fmt(c.total)}</span>
           </div>
           <div className="h-3 overflow-hidden rounded-full bg-bg">
             <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${(c.total / max) * 100}%` }} />
@@ -111,12 +113,22 @@ function ChipBars({ chips }) {
 }
 
 export default function Dashboard() {
+  const { t, lang } = useLanguage();
   const [stats, setStats] = useState({});
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
   const [analytics, setAnalytics] = useState(null);
   const [loadingChart, setLoadingChart] = useState(true);
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 3 + i);
+
+  const fmt = (n) => Number(n ?? 0).toLocaleString(lang === 'pt' ? 'pt-BR' : 'en-US');
+
+  const monthLabels = t('dashboard.months') || DEFAULT_MONTHS;
+  const series = [
+    ['sent', t('dashboard.sent'), 'bg-success'],
+    ['received', t('dashboard.received'), 'bg-sky-400'],
+    ['failed', t('dashboard.failed'), 'bg-danger'],
+  ];
 
   useEffect(() => {
     (async () => {
@@ -143,22 +155,22 @@ export default function Dashboard() {
     return () => { alive = false; };
   }, [year]);
 
-  const monthly = useMemo(() => normalizeMonthly(analytics?.monthly_evolution), [analytics]);
+  const monthly = useMemo(() => normalizeMonthly(analytics?.monthly_evolution, monthLabels), [analytics, monthLabels]);
   const chips = useMemo(() => normalizeChips(analytics?.by_chip), [analytics]);
   const yearSent = monthly.reduce((a, m) => a + m.sent, 0);
   const yearFailed = monthly.reduce((a, m) => a + m.failed, 0);
 
   const cards = [
-    { label: 'Dispositivos online', value: `${stats.online ?? '-'} / ${stats.devices ?? '-'}`, icon: Smartphone, color: 'text-accent' },
-    { label: 'Contatos', value: stats.contacts, icon: Users, color: 'text-accent' },
-    { label: 'Na fila', value: stats.queue, icon: Clock, color: 'text-yellow-400' },
-    { label: 'Enviados', value: stats.sent, icon: CheckCircle2, color: 'text-success' },
-    { label: 'Falhas', value: stats.failed, icon: XCircle, color: 'text-danger' },
+    { label: t('dashboard.onlineDevices'), value: `${stats.online ?? '-'} / ${stats.devices ?? '-'}`, icon: Smartphone, color: 'text-accent' },
+    { label: t('dashboard.contacts'), value: stats.contacts, icon: Users, color: 'text-accent' },
+    { label: t('dashboard.inQueue'), value: stats.queue, icon: Clock, color: 'text-yellow-400' },
+    { label: t('dashboard.sent'), value: stats.sent, icon: CheckCircle2, color: 'text-success' },
+    { label: t('dashboard.failed'), value: stats.failed, icon: XCircle, color: 'text-danger' },
   ];
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+      <h1 className="text-2xl font-bold text-white">{t('dashboard.title')}</h1>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {cards.map(({ label, value, icon: Icon, color }) => (
           <div key={label} className="card">
@@ -170,28 +182,28 @@ export default function Dashboard() {
       </div>
 
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-white">Análise de {year}</h2>
+        <h2 className="text-lg font-semibold text-white">{t('dashboard.analysisOf')} {year}</h2>
         <select className="input w-auto" value={year} onChange={(e) => setYear(Number(e.target.value))}>
           {years.map((y) => <option key={y} value={y}>{y}</option>)}
         </select>
       </div>
 
-      {loadingChart && <p className="text-sm text-slate-400">Carregando análise...</p>}
-      {!loadingChart && !analytics && <p className="text-sm text-danger">Não foi possível carregar os dados analíticos.</p>}
+      {loadingChart && <p className="text-sm text-slate-400">{t('dashboard.loadingAnalytics')}</p>}
+      {!loadingChart && !analytics && <p className="text-sm text-danger">{t('dashboard.errorAnalytics')}</p>}
 
       {analytics && (
         <div className="grid gap-4 lg:grid-cols-3">
           <section className="card lg:col-span-3 space-y-3">
-            <h3 className="font-semibold text-white">Evolução mensal</h3>
-            <MonthlyChart data={monthly} />
+            <h3 className="font-semibold text-white">{t('dashboard.monthlyEvolution')}</h3>
+            <MonthlyChart data={monthly} series={series} fmt={fmt} />
           </section>
           <section className="card space-y-3">
-            <h3 className="font-semibold text-white">Taxa de entrega</h3>
-            <DeliveryDonut sent={yearSent} failed={yearFailed} />
+            <h3 className="font-semibold text-white">{t('dashboard.deliveryRate')}</h3>
+            <DeliveryDonut sent={yearSent} failed={yearFailed} t={t} fmt={fmt} />
           </section>
           <section className="card lg:col-span-2 space-y-3">
-            <h3 className="font-semibold text-white">Disparos por chip</h3>
-            <ChipBars chips={chips} />
+            <h3 className="font-semibold text-white">{t('dashboard.dispatchesByChip')}</h3>
+            <ChipBars chips={chips} t={t} fmt={fmt} />
           </section>
         </div>
       )}

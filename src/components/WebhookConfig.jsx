@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, Webhook, Eye, EyeOff, Copy, KeyRound, Loader2, Send } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 const EVENTS = ['sms_received'];
 
@@ -21,6 +22,7 @@ const isHttpUrl = (value) => {
 
 /** Seção colapsável de webhook (recebimento de SMS) de um aparelho, persistida em user_webhooks. */
 export default function WebhookConfig({ device, userId }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [hook, setHook] = useState(null); // registro salvo
@@ -48,7 +50,7 @@ export default function WebhookConfig({ device, userId }) {
 
   const copy = async () => {
     await navigator.clipboard.writeText(form.secret_key);
-    setMsg({ ok: true, text: 'Token copiado.' });
+    setMsg({ ok: true, text: t('devices.webhookCopied') });
   };
 
   // Sem depender de constraint única: atualiza o registro do aparelho ou cria um novo
@@ -67,9 +69,9 @@ export default function WebhookConfig({ device, userId }) {
     setBusy(true);
     setMsg(null);
     try {
-      if (!isHttpUrl(form.url.trim())) throw new Error('Informe uma URL válida iniciando com http:// ou https://');
+      if (!isHttpUrl(form.url.trim())) throw new Error(t('devices.webhookUrlInvalid'));
       await persist({ ...form, url: form.url.trim() });
-      setMsg({ ok: true, text: 'Webhook salvo.' });
+      setMsg({ ok: true, text: t('devices.webhookSaved') });
     } catch (err) {
       setMsg({ ok: false, text: err.message });
     }
@@ -93,7 +95,7 @@ export default function WebhookConfig({ device, userId }) {
     setBusy(true);
     setMsg(null);
     try {
-      if (!hook) throw new Error('Salve o webhook antes de testar.');
+      if (!hook) throw new Error(t('devices.webhookSaveFirst'));
       const now = new Date().toISOString();
       const { error } = await supabase.from('webhook_delivery_queue').insert({
         webhook_id: hook.id,
@@ -111,7 +113,7 @@ export default function WebhookConfig({ device, userId }) {
         next_retry_at: now,
       });
       if (error) throw error;
-      setToast('Mensagem de teste enfileirada com sucesso! O pg_cron processará em até 1 minuto.');
+      setToast(t('devices.webhookTestQueued'));
       setTimeout(() => setToast(null), 6000);
     } catch (err) {
       setMsg({ ok: false, text: err.message });
@@ -124,9 +126,9 @@ export default function WebhookConfig({ device, userId }) {
       <button type="button" onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between px-3 py-2 text-sm text-slate-300 hover:text-white">
         <span className="flex items-center gap-2">
-          <Webhook size={14} className="text-accent" /> Webhook (recebimento de SMS)
+          <Webhook size={14} className="text-accent" /> {t('devices.webhookSection')}
           {hook && <span className={`badge ${hook.is_active ? 'bg-success/15 text-success' : 'bg-white/10 text-slate-400'}`}>
-            {hook.is_active ? 'Ativo' : 'Inativo'}</span>}
+            {hook.is_active ? t('devices.webhookActive') : t('devices.webhookInactive')}</span>}
         </span>
         <ChevronDown size={14} className={`transition ${open ? 'rotate-180' : ''}`} />
       </button>
@@ -134,35 +136,35 @@ export default function WebhookConfig({ device, userId }) {
       {open && (
         <form onSubmit={save} className="space-y-3 border-t border-white/5 p-3">
           {!loaded ? (
-            <p className="text-xs text-slate-400"><Loader2 size={12} className="mr-1 inline animate-spin" />Carregando...</p>
+            <p className="text-xs text-slate-400"><Loader2 size={12} className="mr-1 inline animate-spin" />{t('common.loading')}</p>
           ) : (
             <>
               <div>
-                <label className="label">URL de destino</label>
+                <label className="label">{t('devices.webhookUrl')}</label>
                 <input type="url" required className="input" value={form.url} onChange={set('url')}
                   placeholder="https://meu-n8n.com/webhook/sms" />
               </div>
 
               <div>
-                <label className="label">Token de segurança (Bearer secret)</label>
+                <label className="label">{t('devices.webhookSecret')}</label>
                 <div className="flex gap-2">
                   <input type={reveal ? 'text' : 'password'} required className="input font-mono" value={form.secret_key}
                     onChange={set('secret_key')} autoComplete="off" placeholder="whsec_..." />
-                  <button type="button" className="btn-ghost px-2" title={reveal ? 'Ocultar' : 'Revelar'} onClick={() => setReveal(!reveal)}>
+                  <button type="button" className="btn-ghost px-2" title={reveal ? t('tokens.hideToken') : t('tokens.showToken')} onClick={() => setReveal(!reveal)}>
                     {reveal ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
-                  <button type="button" className="btn-ghost px-2" title="Copiar" disabled={!form.secret_key} onClick={copy}>
+                  <button type="button" className="btn-ghost px-2" title={t('common.copy')} disabled={!form.secret_key} onClick={copy}>
                     <Copy size={14} />
                   </button>
                   <button type="button" className="btn-ghost whitespace-nowrap px-2"
                     onClick={() => { setForm({ ...form, secret_key: generateSecret() }); setReveal(true); }}>
-                    <KeyRound size={14} /> Gerar Token
+                    <KeyRound size={14} /> {t('devices.webhookGenerate')}
                   </button>
                 </div>
               </div>
 
               <label className="flex cursor-pointer items-center justify-between text-sm">
-                <span>Webhook ativo</span>
+                <span>{t('devices.webhookIsActive')}</span>
                 <button type="button" role="switch" aria-checked={form.is_active} onClick={toggle}
                   className={`relative h-6 w-11 rounded-full transition ${form.is_active ? 'bg-success' : 'bg-white/15'}`}>
                   <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${form.is_active ? 'left-5' : 'left-0.5'}`} />
@@ -171,10 +173,10 @@ export default function WebhookConfig({ device, userId }) {
 
               <div className="flex gap-2">
                 <button className="btn-primary flex-1" disabled={busy}>
-                  {busy ? <Loader2 size={14} className="animate-spin" /> : null} Salvar
+                  {busy ? <Loader2 size={14} className="animate-spin" /> : null} {t('devices.webhookSave')}
                 </button>
                 <button type="button" className="btn-ghost" disabled={busy || !hook} onClick={test}>
-                  <Send size={14} /> Testar envio
+                  <Send size={14} /> {t('devices.webhookTest')}
                 </button>
               </div>
             </>

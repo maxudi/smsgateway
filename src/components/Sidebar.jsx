@@ -1,22 +1,25 @@
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, Key, Smartphone, Users, Send, ListChecks, CreditCard, MessageSquare, LogOut, Megaphone, UserCircle, BookOpen } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
-
-const links = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/dispositivos', label: 'Dispositivos', icon: Smartphone },
-  { to: '/contatos', label: 'Contatos', icon: Users },
-  { to: '/disparar', label: 'Disparar SMS', icon: Send },
-  { to: '/campanhas', label: 'Campanhas', icon: Megaphone },
-  { to: '/fila', label: 'Fila/Histórico', icon: ListChecks },
-  { to: '/planos', label: 'Planos', icon: CreditCard },
-  { to: '/api-tokens', label: 'Integrações / API', icon: Key },
-  { to: '/docs', label: 'Documentação & API', icon: BookOpen },
-  { to: '/perfil', label: 'Perfil / Planos', icon: UserCircle },
-];
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 export default function Sidebar({ mobileOpen = false, onClose }) {
   const { signOut } = useAuth();
+  const { t } = useLanguage();
+
+  const links = [
+    { to: '/', label: t('nav.dashboard'), icon: LayoutDashboard, end: true },
+    { to: '/dispositivos', label: t('nav.devices'), icon: Smartphone },
+    { to: '/contatos', label: t('nav.contacts'), icon: Users },
+    { to: '/disparar', label: t('nav.sendSms'), icon: Send },
+    { to: '/campanhas', label: t('nav.campaigns'), icon: Megaphone },
+    { to: '/fila', label: t('nav.queue'), icon: ListChecks },
+    { to: '/planos', label: t('nav.plans'), icon: CreditCard },
+    { to: '/api-tokens', label: t('nav.apiTokens'), icon: Key },
+    { to: '/docs', label: t('nav.docs'), icon: BookOpen },
+    { to: '/perfil', label: t('nav.profile'), icon: UserCircle },
+  ];
+
   return (
     <>
     {mobileOpen && <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={onClose} aria-hidden="true" />}
@@ -47,7 +50,7 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
       </nav>
 
       <button onClick={signOut} className="m-3 flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-400 hover:bg-white/5">
-        <LogOut size={18} /> Sair
+        <LogOut size={18} /> {t('nav.signOut')}
       </button>
     </aside>
     </>

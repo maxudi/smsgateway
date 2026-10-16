@@ -7,12 +7,14 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
 import Modal from '../components/Modal.jsx';
 
 const ENDPOINT_URL = 'https://api.smsmax.netminas.com/functions/v1/send-sms';
 
 export default function ApiTokens() {
   const { tenant: authTenant } = useAuth();
+  const { t, lang } = useLanguage();
   const [tenantId, setTenantId] = useState(authTenant?.id || null);
   const [tokens, setTokens] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -111,7 +113,7 @@ export default function ApiTokens() {
       }
     } catch (err) {
       console.error('Erro ao carregar tokens:', err);
-      setError('Não foi possível carregar os tokens de API.');
+      setError(t('tokens.loadError'));
       setTokens([]);
     } finally {
       // Garante em qualquer cenário que a animação/indicador de carregamento é desativada
@@ -127,7 +129,7 @@ export default function ApiTokens() {
   const handleGenerateToken = async () => {
     const activeTenantId = tenantId || (await getActiveTenantId());
     if (!activeTenantId) {
-      setError('Nenhum tenant identificado para associar ao token.');
+      setError(t('tokens.noTenantError'));
       return;
     }
     setIsGenerating(true);
@@ -159,7 +161,7 @@ export default function ApiTokens() {
       if (data?.id) setSelectedDocTokenId(data.id);
     } catch (err) {
       console.error('Erro ao criar token:', err);
-      setError(err?.message || 'Erro ao gerar o token de API.');
+      setError(err?.message || t('tokens.generateError'));
     } finally {
       setIsGenerating(false);
     }
@@ -180,18 +182,18 @@ export default function ApiTokens() {
         prev.map((t) => (t.id === tokenItem.id ? { ...t, is_active: newStatus } : t))
       );
       setSuccessNotice(
-        newStatus ? 'Token reativado com sucesso!' : 'Token revogado com sucesso!'
+        newStatus ? t('tokens.tokenReactivatedSuccess') : t('tokens.tokenRevokedSuccess')
       );
       setTimeout(() => setSuccessNotice(''), 3000);
     } catch (err) {
       console.error('Erro ao atualizar status do token:', err);
-      setError('Erro ao alterar o status do token.');
+      setError(t('tokens.statusError'));
     }
   };
 
   // Excluir token permanentemente
   const handleDeleteToken = async (id) => {
-    if (!window.confirm('Tem certeza que deseja excluir permanentemente este token? As integrações associadas deixarão de funcionar imediatamente.')) {
+    if (!window.confirm(t('tokens.deleteConfirm'))) {
       return;
     }
     try {
@@ -203,11 +205,11 @@ export default function ApiTokens() {
         const remaining = tokens.filter((t) => t.id !== id && t.is_active);
         setSelectedDocTokenId(remaining.length > 0 ? remaining[0].id : null);
       }
-      setSuccessNotice('Token removido com sucesso.');
+      setSuccessNotice(t('tokens.tokenDeletedSuccess'));
       setTimeout(() => setSuccessNotice(''), 3000);
     } catch (err) {
       console.error('Erro ao excluir token:', err);
-      setError('Erro ao excluir token de API.');
+      setError(t('tokens.deleteError'));
     }
   };
 
@@ -238,7 +240,7 @@ export default function ApiTokens() {
   -H "Content-Type: application/json" \\
   -d '{
     "to": "+5534988012700",
-    "message": "Mensagem de teste",
+    "message": "${lang === 'pt' ? 'Mensagem de teste' : 'Test message'}",
     "sim_slot": 0,
     "target_device_id": "ALL"
   }'`;
@@ -293,9 +295,9 @@ export default function ApiTokens() {
               <Key size={22} />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white tracking-tight">Tokens de API & Integrações</h1>
+              <h1 className="text-2xl font-bold text-white tracking-tight">{t('tokens.headerTitle')}</h1>
               <p className="text-sm text-slate-400">
-                Gere chaves seguras para disparar SMS externamente via n8n, webhooks ou scripts.
+                {t('tokens.headerDesc')}
               </p>
             </div>
           </div>
@@ -306,7 +308,7 @@ export default function ApiTokens() {
             className="btn-ghost flex items-center gap-2 text-xs border border-white/10 hover:border-white/20 transition"
           >
             <BookOpen size={15} className="text-accent" />
-            <span>Guia & Documentação</span>
+            <span>{t('tokens.guideBtn')}</span>
           </Link>
           <button
             onClick={handleGenerateToken}
@@ -318,7 +320,7 @@ export default function ApiTokens() {
             ) : (
               <Plus size={16} />
             )}
-            <span>Gerar Novo Token</span>
+            <span>{t('tokens.generateBtn')}</span>
           </button>
         </div>
       </div>
@@ -341,7 +343,7 @@ export default function ApiTokens() {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-            <span>Chaves de Acesso</span>
+            <span>{t('tokens.tableTitle')}</span>
             <span className="text-xs font-normal px-2 py-0.5 rounded-full bg-white/10 text-slate-300">
               {tokens.length}
             </span>
@@ -349,17 +351,17 @@ export default function ApiTokens() {
           <button
             onClick={loadTokens}
             className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 transition"
-            title="Atualizar lista"
+            title={t('tokens.refreshTooltip')}
           >
             <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-            <span>Atualizar</span>
+            <span>{t('tokens.refresh')}</span>
           </button>
         </div>
 
         {loading ? (
           <div className="card flex items-center justify-center py-12 text-slate-400">
             <RefreshCw size={24} className="animate-spin mr-3 text-accent" />
-            <span>Carregando chaves de API...</span>
+            <span>{t('tokens.loading')}</span>
           </div>
         ) : tokens.length === 0 ? (
           <div className="card py-12 text-center space-y-3 border-dashed border-white/10">
@@ -367,9 +369,9 @@ export default function ApiTokens() {
               <Key size={24} />
             </div>
             <div>
-              <p className="text-white font-medium">Nenhum token de API cadastrado</p>
+              <p className="text-white font-medium">{t('tokens.emptyTitle')}</p>
               <p className="text-sm text-slate-400 max-w-md mx-auto mt-1">
-                Crie seu primeiro token para conectar seu n8n, Typebot, automações ou qualquer sistema externo ao gateway.
+                {t('tokens.emptyDesc')}
               </p>
             </div>
             <button
@@ -377,7 +379,7 @@ export default function ApiTokens() {
               disabled={isGenerating}
               className="btn-primary inline-flex items-center gap-2 mt-2"
             >
-              <Plus size={16} /> Gerar Primeiro Token
+              <Plus size={16} /> {t('tokens.emptyBtn')}
             </button>
           </div>
         ) : (
@@ -386,11 +388,11 @@ export default function ApiTokens() {
               <table className="w-full text-left text-sm">
                 <thead className="bg-white/[0.02] border-b border-white/5 text-slate-400 text-xs uppercase tracking-wider">
                   <tr>
-                    <th className="px-5 py-3.5">Chave de Acesso (Token)</th>
-                    <th className="px-5 py-3.5">Status</th>
-                    <th className="px-5 py-3.5">Criado Em</th>
-                    <th className="px-5 py-3.5">Último Uso</th>
-                    <th className="px-5 py-3.5 text-right">Ações</th>
+                    <th className="px-5 py-3.5">{t('tokens.thKey')}</th>
+                    <th className="px-5 py-3.5">{t('tokens.thStatus')}</th>
+                    <th className="px-5 py-3.5">{t('tokens.thCreated')}</th>
+                    <th className="px-5 py-3.5">{t('tokens.thLastUsed')}</th>
+                    <th className="px-5 py-3.5 text-right">{t('tokens.thActions')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 font-mono text-xs">
@@ -413,14 +415,14 @@ export default function ApiTokens() {
                             <button
                               onClick={() => toggleVisibility(item.id)}
                               className="p-1 text-slate-400 hover:text-white transition rounded"
-                              title={isRevealed ? 'Ocultar' : 'Exibir token'}
+                              title={isRevealed ? t('tokens.hideToken') : t('tokens.showToken')}
                             >
                               {isRevealed ? <EyeOff size={14} /> : <Eye size={14} />}
                             </button>
                             <button
                               onClick={() => copyToClipboard(item.token, `token-${item.id}`)}
                               className="p-1 text-slate-400 hover:text-accent transition rounded"
-                              title="Copiar token completo"
+                              title={t('tokens.copyTokenTooltip')}
                             >
                               {copiedKey === `token-${item.id}` ? (
                                 <Check size={14} className="text-emerald-400" />
@@ -434,18 +436,18 @@ export default function ApiTokens() {
                           {item.is_active ? (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                              Ativo
+                              {t('tokens.badgeActive')}
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
                               <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
-                              Revogado
+                              {t('tokens.badgeRevoked')}
                             </span>
                           )}
                         </td>
                         <td className="px-5 py-4 font-sans text-slate-400">
                           {item.created_at
-                            ? new Date(item.created_at).toLocaleDateString('pt-BR', {
+                            ? new Date(item.created_at).toLocaleDateString(lang === 'pt' ? 'pt-BR' : 'en-US', {
                               day: '2-digit',
                               month: '2-digit',
                               year: 'numeric',
@@ -457,7 +459,7 @@ export default function ApiTokens() {
                         <td className="px-5 py-4 font-sans text-slate-400">
                           {item.last_used_at ? (
                             <span className="text-slate-300">
-                              {new Date(item.last_used_at).toLocaleDateString('pt-BR', {
+                              {new Date(item.last_used_at).toLocaleDateString(lang === 'pt' ? 'pt-BR' : 'en-US', {
                                 day: '2-digit',
                                 month: '2-digit',
                                 year: 'numeric',
@@ -466,7 +468,7 @@ export default function ApiTokens() {
                               })}
                             </span>
                           ) : (
-                            <span className="text-slate-500 italic">Nunca usado</span>
+                            <span className="text-slate-500 italic">{t('tokens.neverUsed')}</span>
                           )}
                         </td>
                         <td className="px-5 py-4 font-sans text-right">
@@ -480,7 +482,7 @@ export default function ApiTokens() {
                                   }`}
                                 title="Usar este token nos exemplos da documentação abaixo"
                               >
-                                {isSelectedForDoc ? 'Usando no Guia' : 'Usar no Guia'}
+                                {isSelectedForDoc ? t('tokens.usingInGuide') : t('tokens.useInGuide')}
                               </button>
                             )}
 
@@ -490,7 +492,7 @@ export default function ApiTokens() {
                                 ? 'border-white/10 text-slate-400 hover:text-amber-400 hover:border-amber-400/30'
                                 : 'border-white/10 text-slate-400 hover:text-emerald-400 hover:border-emerald-400/30'
                                 }`}
-                              title={item.is_active ? 'Revogar token' : 'Reativar token'}
+                              title={item.is_active ? t('tokens.revokeTitle') : t('tokens.reactivateTitle')}
                             >
                               <Power size={15} />
                             </button>
@@ -498,7 +500,7 @@ export default function ApiTokens() {
                             <button
                               onClick={() => handleDeleteToken(item.id)}
                               className="p-1.5 rounded-lg border border-white/10 text-slate-400 hover:text-rose-400 hover:border-rose-400/30 transition"
-                              title="Excluir token"
+                              title={t('tokens.deleteTitle')}
                             >
                               <Trash2 size={15} />
                             </button>
@@ -520,21 +522,21 @@ export default function ApiTokens() {
           <div>
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <Code2 size={22} className="text-accent" />
-              Documentação da API & n8n
+              {t('tokens.docsTitle')}
             </h2>
             <p className="text-sm text-slate-400 mt-0.5">
-              Utilize os exemplos abaixo para integrar seus sistemas diretamente à nossa fila de disparos.
+              {t('tokens.docsDesc')}
             </p>
           </div>
           {activeDocToken ? (
             <div className="hidden md:flex items-center gap-2 text-xs bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-3 py-1.5 rounded-lg">
               <ShieldCheck size={14} />
-              <span>Token ativo aplicado automaticamente aos exemplos</span>
+              <span>{t('tokens.tokenActiveApplied')}</span>
             </div>
           ) : (
             <div className="hidden md:flex items-center gap-2 text-xs bg-amber-500/10 border border-amber-500/20 text-amber-400 px-3 py-1.5 rounded-lg">
               <AlertCircle size={14} />
-              <span>Gere um token ativo para ver os exemplos preenchidos</span>
+              <span>{t('tokens.tokenGeneratePrompt')}</span>
             </div>
           )}
         </div>
@@ -556,11 +558,11 @@ export default function ApiTokens() {
             >
               {copiedKey === 'endpoint' ? (
                 <>
-                  <Check size={14} className="text-emerald-400" /> Copiado!
+                  <Check size={14} className="text-emerald-400" /> {t('common.copied')}
                 </>
               ) : (
                 <>
-                  <Copy size={14} /> Copiar Endpoint
+                  <Copy size={14} /> {t('tokens.copyEndpoint')}
                 </>
               )}
             </button>
@@ -568,19 +570,19 @@ export default function ApiTokens() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 text-xs">
             <div className="bg-bg/60 p-3.5 rounded-lg border border-white/5 space-y-1.5">
-              <span className="text-slate-400 font-semibold uppercase tracking-wider block">Headers Requeridos:</span>
+              <span className="text-slate-400 font-semibold uppercase tracking-wider block">{t('tokens.reqHeaders')}</span>
               <div className="font-mono space-y-1 text-slate-300">
                 <div><span className="text-accent">Authorization:</span> Bearer {displayToken}</div>
                 <div><span className="text-accent">Content-Type:</span> application/json</div>
               </div>
             </div>
             <div className="bg-bg/60 p-3.5 rounded-lg border border-white/5 space-y-1.5">
-              <span className="text-slate-400 font-semibold uppercase tracking-wider block">Campos do JSON (Body):</span>
+              <span className="text-slate-400 font-semibold uppercase tracking-wider block">{t('tokens.bodyParams')}</span>
               <div className="font-mono space-y-1 text-slate-300">
-                <div><span className="text-white font-semibold">to:</span> Número com DDI e DDD (ex: "+5534988012700")</div>
-                <div><span className="text-white font-semibold">message:</span> Texto da mensagem SMS</div>
-                <div><span className="text-white font-semibold">sim_slot:</span> Chip de envio (opcional: 0 ou 1, padrão 0)</div>
-                <div><span className="text-white font-semibold">target_device_id:</span> Dispositivo alvo (opcional: ID específico ou "ALL")</div>
+                <div><span className="text-white font-semibold">to:</span> {t('tokens.paramTo')}</div>
+                <div><span className="text-white font-semibold">message:</span> {t('tokens.paramMessage')}</div>
+                <div><span className="text-white font-semibold">sim_slot:</span> {t('tokens.paramSim')}</div>
+                <div><span className="text-white font-semibold">target_device_id:</span> {t('tokens.paramTarget')}</div>
               </div>
             </div>
           </div>
@@ -591,7 +593,7 @@ export default function ApiTokens() {
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-white flex items-center gap-2">
               <Terminal size={16} className="text-accent" />
-              Exemplo de Requisição cURL
+              {t('tokens.curlTitle')}
             </h3>
             <button
               onClick={() => copyToClipboard(curlCode, 'curl')}
@@ -599,11 +601,11 @@ export default function ApiTokens() {
             >
               {copiedKey === 'curl' ? (
                 <>
-                  <Check size={14} className="text-emerald-400" /> Copiado!
+                  <Check size={14} className="text-emerald-400" /> {t('common.copied')}
                 </>
               ) : (
                 <>
-                  <Copy size={14} /> Copiar cURL
+                  <Copy size={14} /> {t('tokens.copyCurl')}
                 </>
               )}
             </button>
@@ -613,7 +615,7 @@ export default function ApiTokens() {
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <span className="text-emerald-400 font-bold font-mono">HTTP 200 OK</span>
-            <span>Retorno imediato:</span>
+            <span>{t('tokens.immediateReturn')}</span>
             <code className="font-mono text-slate-300 bg-white/5 px-2 py-0.5 rounded">
               {'{ "success": true, "messageId": "uuid", "status": "enfileirado", "sim_slot": 0, "target_device_id": "ALL" }'}
             </code>
@@ -628,24 +630,24 @@ export default function ApiTokens() {
                 n8n
               </div>
               <div>
-                <h3 className="text-base font-bold text-white">Configuração no n8n (HTTP Request Node)</h3>
+                <h3 className="text-base font-bold text-white">{t('tokens.n8nCardTitle')}</h3>
                 <p className="text-xs text-slate-400">
-                  Como disparar SMS diretamente dentro dos seus fluxos de automação do n8n.
+                  {t('tokens.n8nCardDesc')}
                 </p>
               </div>
             </div>
             <button
               onClick={() => copyToClipboard(n8nNodeJson, 'n8n-node')}
               className="btn-primary text-xs flex items-center gap-2 self-start sm:self-auto"
-              title="Copie e cole direto no canvas do n8n (Ctrl+V)"
+              title="Ctrl+V"
             >
               {copiedKey === 'n8n-node' ? (
                 <>
-                  <Check size={14} className="text-emerald-300" /> Nó do n8n Copiado!
+                  <Check size={14} className="text-emerald-300" /> {t('tokens.n8nCopied')}
                 </>
               ) : (
                 <>
-                  <Layers size={14} /> Copiar Nó Pronto para n8n (Ctrl+V)
+                  <Layers size={14} /> {t('tokens.n8nCopyBtn')}
                 </>
               )}
             </button>
@@ -655,7 +657,7 @@ export default function ApiTokens() {
             <div className="space-y-3 bg-bg/50 p-4 rounded-xl border border-white/5">
               <h4 className="font-semibold text-white flex items-center gap-2 text-sm">
                 <span className="h-5 w-5 rounded-full bg-accent/20 text-accent flex items-center justify-center text-xs">1</span>
-                Configuração Manual do Nó
+                {t('tokens.n8nManualTitle')}
               </h4>
               <ul className="space-y-2 text-slate-300 leading-relaxed list-disc list-inside">
                 <li>Adicione um nó do tipo <strong className="text-white">HTTP Request</strong>.</li>
@@ -677,7 +679,7 @@ export default function ApiTokens() {
             <div className="space-y-3 bg-bg/50 p-4 rounded-xl border border-white/5">
               <h4 className="font-semibold text-white flex items-center gap-2 text-sm">
                 <span className="h-5 w-5 rounded-full bg-accent/20 text-accent flex items-center justify-center text-xs">2</span>
-                Mapeamento do Corpo (Body)
+                {t('tokens.n8nBodyTitle')}
               </h4>
               <ul className="space-y-2 text-slate-300 leading-relaxed list-disc list-inside">
                 <li>No nó do n8n, marque <strong className="text-white">Send Body</strong> como ativado.</li>
@@ -686,17 +688,14 @@ export default function ApiTokens() {
                   <div className="mt-1 font-mono text-[11px] bg-black/30 p-2.5 rounded border border-white/5 text-slate-200">
                     <pre>{`{
   "to": "={{ $json.phone }}",
-  "message": "={{ $json.mensagem }}",
+  "message": "={{ $json.message }}",
   "sim_slot": 0,
   "target_device_id": "ALL"
 }`}</pre>
                   </div>
                 </li>
-                <li>
-                  <span className="text-accent font-semibold">Dica Rápida:</span> Clique no botão
-                  <strong className="text-white"> "Copiar Nó Pronto para n8n"</strong> acima e pressione
-                  <kbd className="bg-white/10 px-1.5 py-0.5 rounded text-white font-mono text-[10px] mx-1">Ctrl + V</kbd>
-                  direto na tela do seu n8n para importar o nó já montado!
+                <li className="text-slate-400">
+                  {t('tokens.n8nQuickTip')}
                 </li>
               </ul>
             </div>
@@ -707,7 +706,7 @@ export default function ApiTokens() {
       {/* Modal de Sucesso com Novo Token */}
       {showNewTokenModal && newlyCreatedToken && (
         <Modal
-          title="Novo Token de API Gerado!"
+          title={t('tokens.modalTitle')}
           onClose={() => {
             setShowNewTokenModal(false);
             setNewlyCreatedToken(null);
@@ -717,15 +716,15 @@ export default function ApiTokens() {
             <div className="p-3.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-start gap-2.5">
               <ShieldCheck size={18} className="shrink-0 mt-0.5" />
               <div>
-                <p className="font-semibold">Copie seu token agora!</p>
+                <p className="font-semibold">{t('tokens.modalAlertTitle')}</p>
                 <p className="text-slate-300 mt-0.5">
-                  Por segurança, mantenha este token em segredo. Ele já está vinculado ao seu tenant e pronto para uso no n8n e Webhooks.
+                  {t('tokens.modalAlertDesc')}
                 </p>
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <label className="label">Chave de Acesso:</label>
+              <label className="label">{t('tokens.modalKeyLabel')}</label>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
@@ -739,11 +738,11 @@ export default function ApiTokens() {
                 >
                   {copiedKey === 'modal-new-token' ? (
                     <>
-                      <Check size={14} className="text-emerald-300" /> Copiado!
+                      <Check size={14} className="text-emerald-300" /> {t('common.copied')}
                     </>
                   ) : (
                     <>
-                      <Copy size={14} /> Copiar
+                      <Copy size={14} /> {t('common.copy')}
                     </>
                   )}
                 </button>
@@ -758,7 +757,7 @@ export default function ApiTokens() {
                 }}
                 className="btn-ghost text-xs"
               >
-                Concluir
+                {t('tokens.modalCompleteBtn')}
               </button>
             </div>
           </div>
