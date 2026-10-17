@@ -156,8 +156,15 @@ export default function Login({ initialMode }) {
 
       <div className="w-full max-w-sm space-y-4">
         <form onSubmit={submit} className="card w-full space-y-4 shadow-2xl border border-white/5">
-          <div className="flex items-center gap-2 justify-center text-white text-xl font-bold tracking-tight">
-            <MessageSquare className="text-accent" /> Max <span className="text-accent">Netminas</span>
+          <div className="flex flex-col items-center justify-center gap-1.5 pb-1">
+            <img
+              src="/logo-icon.png"
+              alt="Max Netminas"
+              className="h-16 w-auto object-contain drop-shadow-[0_4px_16px_rgba(34,211,238,0.2)]"
+            />
+            <div className="text-white text-2xl font-extrabold tracking-tight leading-none">
+              Max <span className="text-accent font-semibold">Netminas</span>
+            </div>
           </div>
 
           {mode === 'signup' && (

@@ -239,10 +239,10 @@ export async function suspendCampaign(campaign) {
  * Troca em lote aparelho e chip dos itens ainda não enviados (round-robin entre os canais),
  * mantendo horários e status. deviceMode: 'all' (online agora) ou id do aparelho; simMode: 'alternate' | '0' | '1'.
  */
-export async function reassignCampaign(campaign, deviceMode, simMode, onProgress) {
+export async function reassignCampaign(campaign, deviceMode, simMode, onProgress, maxSimSlots = 2) {
   const { data: devices, error } = await supabase.from('devices').select('*').eq('user_id', campaign.user_id);
   if (error) throw error;
-  const channels = buildChannels(devices, deviceMode, simMode);
+  const channels = buildChannels(devices, deviceMode, simMode, false, maxSimSlots);
   if (!channels.length) {
     throw new Error(deviceMode === 'all' ? 'Nenhum aparelho online no momento.' : 'Aparelho não encontrado.');
   }

@@ -16,10 +16,8 @@ export default function Terms() {
       <header className="border-b border-white/5 bg-surface/80 backdrop-blur sticky top-0 z-30">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <Link to="/" className="flex items-center gap-2 text-white font-bold text-lg hover:opacity-90 transition">
-              <div className="h-8 w-8 rounded-lg bg-accent/15 text-accent flex items-center justify-center">
-                <MessageSquare size={18} />
-              </div>
+            <Link to="/" className="flex items-center gap-2.5 text-white font-bold text-lg hover:opacity-90 transition">
+              <img src="/logo-icon.png" alt="Max Netminas" className="h-8 w-8 object-contain shrink-0" />
               <span>Max <span className="text-accent">Netminas</span></span>
             </Link>
             <span className="hidden sm:inline text-xs text-slate-500">•</span>

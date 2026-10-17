@@ -154,7 +154,7 @@ serve(async (req: Request) => {
         status: "PENDING",
         created_at: new Date().toISOString(),
       })
-      .select("id")
+      .select("id, sim_slot")
       .single();
 
     if (insertError) {
@@ -181,7 +181,7 @@ serve(async (req: Request) => {
         success: true,
         messageId: queueData.id,
         status: "enfileirado",
-        sim_slot: sim_slot,
+        sim_slot: queueData.sim_slot ?? sim_slot,
         target_device_id: target_device_id,
       }),
       {

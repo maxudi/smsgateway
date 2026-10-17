@@ -1,10 +1,10 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Key, Smartphone, Users, Send, ListChecks, CreditCard, MessageSquare, LogOut, Megaphone, UserCircle, BookOpen } from 'lucide-react';
+import { LayoutDashboard, Key, Smartphone, Users, Send, ListChecks, CreditCard, MessageSquare, LogOut, Megaphone, UserCircle, BookOpen, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 
 export default function Sidebar({ mobileOpen = false, onClose }) {
-  const { signOut } = useAuth();
+  const { signOut, isMaster } = useAuth();
   const { t } = useLanguage();
 
   const links = [
@@ -18,16 +18,15 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
     { to: '/api-tokens', label: t('nav.apiTokens'), icon: Key },
     { to: '/docs', label: t('nav.docs'), icon: BookOpen },
     { to: '/perfil', label: t('nav.profile'), icon: UserCircle },
+    ...(isMaster ? [{ to: '/admin', label: 'Admin · Clientes', icon: ShieldCheck }] : []),
   ];
 
   return (
     <>
     {mobileOpen && <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={onClose} aria-hidden="true" />}
     <aside className={`${mobileOpen ? 'fixed inset-y-0 left-0 z-40 flex shadow-2xl' : 'hidden'} md:static md:z-auto md:flex md:shadow-none w-60 shrink-0 flex-col bg-surface border-r border-white/5`}>
-      <div className="flex items-center gap-2 px-5 py-5">
-        <div className="h-9 w-9 rounded-lg bg-accent/15 text-accent flex items-center justify-center">
-          <MessageSquare size={20} />
-        </div>
+      <div className="flex items-center gap-2.5 px-5 py-5">
+        <img src="/logo-icon.png" alt="Max Netminas" className="h-9 w-9 object-contain shrink-0" />
         <span className="text-lg font-bold text-white">Max <span className="text-accent">Netminas</span></span>
       </div>
 

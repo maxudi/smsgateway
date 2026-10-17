@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Send, Save, AlertTriangle, Loader2, Smartphone, Users, ShieldCheck, Clock, X } from 'lucide-react';
+import { Send, Save, AlertTriangle, Loader2, Smartphone, Users, ShieldCheck, Clock, X, Zap } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { isDeviceOnline, buildChannels } from '../lib/devices.js';
 import { useDevices } from '../hooks/useDevices.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import CampaignList from '../components/CampaignList.jsx';
+import QuickTestSmsModal from '../components/QuickTestSmsModal.jsx';
 import {
   BATCH_SIZE, SCHEDULE_CHUNK, DEFAULT_DAYS, SUFFIX_MARGIN, fetchAll, personalize, humanizeMessage,
   scheduleByChannel, scheduleStartTime, channelKey, estimatePerDay, clearUnsentItems,
@@ -76,21 +77,25 @@ export default function SendCampaign() {
   const [progress, setProgress] = useState(null);
   const [error, setError] = useState(null);
   const [previewSeed, setPreviewSeed] = useState(0);
+  const [smsUsedMonth, setSmsUsedMonth] = useState(0);
+  const [showQuickTest, setShowQuickTest] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const duplicateHandled = useRef(false);
 
   useEffect(() => {
     (async () => {
-      const [c, g] = await Promise.all([
+      const [c, g, rpc] = await Promise.all([
         // Paginado: o Supabase limita 1000 linhas por requisição
         fetchAll(() => supabase.from('contacts')
           .select('*, contact_group_members!contact_group_members_contact_id_fkey(group_id)')
           .eq('user_id', user.id).order('id')),
         supabase.from('contact_groups').select('*').order('sort_order'),
+        supabase.rpc('get_dashboard_analytics'),
       ]);
       setContacts(c);
       setGroups(g.data ?? []);
+      setSmsUsedMonth(rpc.data?.current_month?.sent ?? 0);
       setLoading(false);
     })();
   }, [user.id]);
@@ -179,8 +184,11 @@ export default function SendCampaign() {
 
   // ----- Canais (aparelho x chip) -----
   // Agendar não depende de o aparelho estar online agora: consideram-se todos os cadastrados
+  const maxSimSlots = isMaster ? 2 : Number(plan?.max_sim_slots ?? 1);
+  const singleSimOnly = !isMaster && maxSimSlots <= 1;
+  const effectiveSimMode = singleSimOnly ? '0' : form.simMode;
   const targetDevices = form.deviceMode === 'all' ? devices : devices.filter((d) => d.id === form.deviceMode);
-  const channels = buildChannels(devices, form.deviceMode, form.simMode, true);
+  const channels = buildChannels(devices, form.deviceMode, effectiveSimMode, true, maxSimSlots);
   const sleepingDevices = targetDevices.filter((d) => !isDeviceOnline(d));
 
   // ----- Validação -----
@@ -200,9 +208,11 @@ export default function SendCampaign() {
   const minI = Number(form.minInterval);
   const maxI = Number(form.maxInterval);
   const planMin = isMaster ? 0 : plan?.min_interval_seconds ?? 0;
+  const allowScheduling = isMaster || Boolean(plan?.allow_scheduler ?? plan?.allow_scheduling);
   const perDay = minI > 0 && maxI >= minI && form.start < form.end ? estimatePerDay(form) : 0;
   const effectivePerDay = Number(form.dailyLimit) > 0 ? Math.min(perDay, Number(form.dailyLimit)) : perDay;
-  const remainingQuota = plan && !isMaster ? plan.max_sms_monthly - (profile?.sms_used_this_month ?? 0) : Infinity;
+  const usedThisMonth = Math.max(smsUsedMonth, profile?.sms_used_this_month ?? 0);
+  const remainingQuota = plan && !isMaster ? Math.max(0, (plan.max_sms_monthly ?? 300) - usedThisMonth) : Infinity;
 
   const errors = [];
   const warnings = [];
@@ -215,7 +225,8 @@ export default function SendCampaign() {
   if (form.start >= form.end) errors.push('O horário inicial deve ser anterior ao final.');
   if (!form.days.length) errors.push('Selecione ao menos um dia de envio.');
   if (form.scheduleStart) {
-    if (!form.startAt) errors.push('Informe a data e hora de início do disparo.');
+    if (!allowScheduling) errors.push('O agendamento de campanhas não está disponível no plano Gratuito.');
+    else if (!form.startAt) errors.push('Informe a data e hora de início do disparo.');
     else if (new Date(form.startAt) <= new Date()) errors.push('A data de início precisa estar no futuro.');
   }
   if (recipientMode === 'tipos' && !selectedTipos.length) errors.push('Selecione ao menos um tipo.');
@@ -262,7 +273,7 @@ export default function SendCampaign() {
       const { data: freshDevices, error: dErr } = await supabase.from('devices').select('*').eq('user_id', user.id);
       if (dErr) throw dErr;
       reloadDevices();
-      const liveChannels = buildChannels(freshDevices, form.deviceMode, form.simMode, true);
+      const liveChannels = buildChannels(freshDevices, form.deviceMode, effectiveSimMode, true, maxSimSlots);
       if (!liveChannels.length) throw new Error('Nenhum aparelho cadastrado para o disparo.');
       const startAt = form.scheduleStart && form.startAt ? new Date(form.startAt).toISOString() : null;
       const cfg = {
@@ -300,8 +311,7 @@ export default function SendCampaign() {
         seen.add(k);
         // Início futuro: nada vai direto para sms_queue
         if (startNow && isFirst && startFrom.getTime() - Date.now() < 2000 && times[i].getTime() - Date.now() < 2000) {
-          const { user_id: _u, ...q } = r;
-          queueRows.push({ ...q, status: 'PENDING' });
+          queueRows.push({ ...r, status: 'PENDING' });
         } else scheduleRows.push(r);
       });
 
@@ -309,7 +319,7 @@ export default function SendCampaign() {
       const campaignData = {
         title: form.title.trim() || `Campanha ${new Date().toLocaleString('pt-BR')}`,
         message_template: form.message,
-        sim_slot_preference: form.simMode === 'alternate' ? null : Number(form.simMode),
+        sim_slot_preference: effectiveSimMode === 'alternate' ? null : Number(effectiveSimMode),
         target_device_id: form.deviceMode === 'all' ? null : form.deviceMode,
         status: startNow ? 'RUNNING' : 'DRAFT',
         interval_seconds: minI,
@@ -356,6 +366,7 @@ export default function SendCampaign() {
           ? 'Campanha iniciada! As mensagens foram agendadas e continuarão sendo enviadas automaticamente mesmo se você fechar esta página.'
           : `Rascunho salvo com ${rows.length} SMS. Use "Iniciar" na lista para disparar.`,
       });
+      if (startNow) setSmsUsedMonth((n) => n + rows.length);
       resetForm();
       setTab('campaigns');
       refreshProfile();
@@ -393,7 +404,34 @@ export default function SendCampaign() {
 
   return (
     <div className="space-y-6 max-w-6xl">
-      <h1 className="text-2xl font-bold text-white">Disparar SMS</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Disparar SMS</h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Programe campanhas com rotação inteligente ou envie um disparo rápido de teste para validar seu aparelho.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowQuickTest(true)}
+          className="btn-primary text-xs px-4 py-2.5 shadow-lg shadow-accent/20"
+        >
+          <Zap size={15} /> Enviar SMS de Teste
+        </button>
+      </div>
+
+      <QuickTestSmsModal
+        open={showQuickTest}
+        onClose={() => setShowQuickTest(false)}
+        userId={user.id}
+        devices={devices}
+        singleSimOnly={singleSimOnly}
+        remainingQuota={remainingQuota}
+        onSent={() => {
+          setSmsUsedMonth((n) => n + 1);
+          refreshProfile();
+        }}
+      />
 
       <div className="flex gap-2 border-b border-white/5">
         {tabBtn('new', editing ? 'Editando campanha' : 'Nova campanha')}
@@ -531,14 +569,22 @@ export default function SendCampaign() {
                   </div>
                   <div>
                     <label className="label">Chip</label>
-                    <select className="input" value={form.simMode} onChange={set('simMode')}>
-                      <option value="alternate">Alternar entre SIM 1 e SIM 2</option>
-                      <option value="0">Apenas SIM 1</option>
-                      <option value="1">Apenas SIM 2</option>
+                    <select className="input" value={effectiveSimMode} disabled={singleSimOnly} onChange={set('simMode')}>
+                      <option value="0">Apenas SIM 1 (Slot 0)</option>
+                      <option value="alternate" disabled={singleSimOnly}>
+                        Alternar entre SIM 1 e SIM 2{singleSimOnly ? ' (apenas planos Dual-SIM)' : ''}
+                      </option>
+                      <option value="1" disabled={singleSimOnly}>
+                        Apenas SIM 2 (Slot 1){singleSimOnly ? ' (apenas planos Dual-SIM)' : ''}
+                      </option>
                     </select>
                   </div>
                 </div>
-                <p className="text-xs text-slate-500">{channels.length} canal(is) em Round-Robin (aparelho × chip).</p>
+                <p className="text-xs text-slate-500">
+                  {singleSimOnly
+                    ? 'Seu plano atual opera com 1 chip (SIM 1). Faça upgrade para liberar rotação Dual-SIM.'
+                    : `${channels.length} canal(is) em Round-Robin (aparelho × chip).`}
+                </p>
               </section>
 
               {/* Mensagem */}
@@ -622,11 +668,22 @@ export default function SendCampaign() {
                 <p className="text-xs text-slate-500">Envios fora da janela ou dos dias marcados vão para o início do próximo dia válido.</p>
 
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" className="accent-accent" checked={form.scheduleStart} onChange={set('scheduleStart')} />
-                    Agendar início do disparo
+                  <label className={`flex items-center gap-2 text-sm ${!allowScheduling ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                    <input
+                      type="checkbox"
+                      className="accent-accent"
+                      disabled={!allowScheduling}
+                      checked={allowScheduling ? form.scheduleStart : false}
+                      onChange={set('scheduleStart')}
+                    />
+                    <span>Agendar início do disparo</span>
+                    {!allowScheduling && (
+                      <span className="ml-auto rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-400">
+                        Planos pagos
+                      </span>
+                    )}
                   </label>
-                  {form.scheduleStart && (
+                  {allowScheduling && form.scheduleStart && (
                     <input type="datetime-local" className="input" value={form.startAt} onChange={set('startAt')} />
                   )}
                 </div>

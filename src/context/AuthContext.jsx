@@ -5,12 +5,16 @@ const AuthContext = createContext(null);
 
 /** Plano efetivo: limites do tenant têm prioridade sobre os do catálogo; nomes legados mantidos para o restante do app. */
 function normalizePlan(sp, tenant) {
+  const maxDevices = tenant?.max_devices ?? sp.max_devices ?? 1;
+  const maxSimSlots = tenant?.max_sim_slots ?? sp.max_sim_slots ?? ((tenant?.plano ?? sp.id) === 'FREE' ? 1 : 2);
   return {
     ...sp,
-    max_devices: tenant?.max_devices ?? sp.max_devices,
+    max_devices: maxDevices,
+    max_sim_slots: maxSimSlots,
+    max_webhooks: maxDevices,
     max_sms_monthly: tenant?.max_monthly_sms ?? sp.max_monthly_sms ?? sp.max_sms_monthly,
     max_contacts: tenant?.max_contacts ?? sp.max_contacts,
-    allow_scheduler: sp.allow_scheduling ?? sp.allow_scheduler,
+    allow_scheduler: tenant?.allow_scheduling ?? sp.allow_scheduling ?? sp.allow_scheduler,
     min_interval_seconds: sp.min_interval_seconds ?? 0,
   };
 }
@@ -32,15 +36,21 @@ export function AuthProvider({ children }) {
     setProfile(p);
 
     // Fonte principal: tenants.plano -> subscription_plans. Legado: user_profiles.plan_id -> plans
-    const tenantQuery = supabase.from('tenants').select('*');
-    const byLink = p?.tenant_id ? tenantQuery.eq('id', p.tenant_id) : tenantQuery.eq('email', email ?? '');
-    let { data: t } = await byLink.maybeSingle();
-    if (!t) ({ data: t } = await supabase.from('tenants').select('*').limit(1).maybeSingle());
+    let t = null;
+    if (p?.tenant_id) {
+      const { data } = await supabase.from('tenants').select('*').eq('id', p.tenant_id).maybeSingle();
+      t = data;
+    }
+    if (!t && email) {
+      const { data } = await supabase.from('tenants').select('*').eq('email', email).maybeSingle();
+      t = data;
+    }
     setTenant(t ?? null);
 
     let resolved = null;
-    if (t?.plano) {
-      const { data: sp } = await supabase.from('subscription_plans').select('*').eq('id', t.plano).maybeSingle();
+    const planKey = t?.plano || (!p?.plan_id ? 'FREE' : null);
+    if (planKey) {
+      const { data: sp } = await supabase.from('subscription_plans').select('*').eq('id', planKey).maybeSingle();
       if (sp) resolved = normalizePlan(sp, t);
     }
     if (!resolved && p?.plan_id) {

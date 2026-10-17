@@ -69,15 +69,7 @@ export default function ApiTokens() {
       .maybeSingle();
 
     if (error || !tenant) {
-      // Fallback: se for master ou teste local, seleciona o primeiro disponível
-      const { data: fallbackTenant } = await supabase
-        .from('tenants')
-        .select('id')
-        .limit(1)
-        .single();
-      const fallbackId = fallbackTenant?.id || null;
-      if (fallbackId) setTenantId(fallbackId);
-      return fallbackId;
+      return null;
     }
 
     setTenantId(tenant.id);
@@ -239,7 +231,7 @@ export default function ApiTokens() {
   -H "Authorization: Bearer ${displayToken}" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "to": "+5534988012700",
+    "to": "+553499999999",
     "message": "${lang === 'pt' ? 'Mensagem de teste' : 'Test message'}",
     "sim_slot": 0,
     "target_device_id": "ALL"

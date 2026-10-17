@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Smartphone, Trash2 } from 'lucide-react';
+import { Plus, Smartphone, Trash2, Lock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
@@ -9,7 +9,7 @@ import { isDeviceOnline } from '../lib/devices.js';
 import { useDevices } from '../hooks/useDevices.js';
 
 export default function Devices() {
-  const { user, plan, isMaster } = useAuth();
+  const { user, plan, tenant, isMaster } = useAuth();
   const { t, lang } = useLanguage();
   const { devices: liveDevices, reload: load } = useDevices(user.id);
   // Ordem alfabética fixa para os cartões não trocarem de lugar a cada ping
@@ -19,20 +19,75 @@ export default function Devices() {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
 
+  const maxSimSlots = isMaster ? 2 : Number(plan?.max_sim_slots ?? tenant?.max_sim_slots ?? 1);
+  const singleSimOnly = !isMaster && maxSimSlots <= 1;
+
   const link = async (e) => {
     e.preventDefault();
     setError('');
-    if (!isMaster && plan && devices.length >= plan.max_devices) {
+    const cleanId = deviceId.trim();
+    const cleanName = name.trim() || (lang === 'pt' ? 'Meu celular' : 'My phone');
+
+    if (!isMaster && plan && devices.length >= plan.max_devices && !devices.some((d) => d.id === cleanId)) {
       return setError(t('devices.planLimitError', { max: plan.max_devices }));
     }
-    // O app Android registra o aparelho com o Device ID; aqui "reivindicamos" o registro para o usuário
-    const { data: existing } = await supabase.from('devices').select('id,user_id').eq('id', deviceId.trim()).maybeSingle();
-    const payload = { name: name.trim() || 'Meu celular', user_id: user.id };
+
+    const alreadyLinkedMsg =
+      lang === 'pt'
+        ? 'Este Device ID já está vinculado a outra conta. Remova-o da conta anterior antes de cadastrá-lo aqui.'
+        : 'This Device ID is already linked to another account. Remove it from the previous account before linking it here.';
+
+    // 1. Tenta vincular via RPC segura (verifica propriedade no banco mesmo com RLS ativo)
+    const { error: rpcErr } = await supabase.rpc('claim_device', {
+      p_device_id: cleanId,
+      p_name: cleanName,
+    });
+
+    if (!rpcErr) {
+      setOpen(false);
+      setDeviceId('');
+      setName('');
+      load();
+      return;
+    }
+
+    // Se a RPC bloqueou por já pertencer a outro usuário ou limite de plano, exibe a mensagem
+    if (
+      rpcErr.message &&
+      !rpcErr.message.includes('claim_device') &&
+      !rpcErr.message.includes('function')
+    ) {
+      if (rpcErr.message.includes('duplicate key') || rpcErr.message.includes('já está vinculado')) {
+        return setError(alreadyLinkedMsg);
+      }
+      return setError(rpcErr.message);
+    }
+
+    // 2. Fallback caso a migration ainda não tenha sido rodada no Supabase
+    const { data: existing } = await supabase
+      .from('devices')
+      .select('id,user_id')
+      .eq('id', cleanId)
+      .maybeSingle();
+
+    if (existing && existing.user_id && existing.user_id !== user.id) {
+      return setError(alreadyLinkedMsg);
+    }
+
+    const payload = { name: cleanName, user_id: user.id };
     const { error: err } = existing
-      ? await supabase.from('devices').update(payload).eq('id', deviceId.trim())
-      : await supabase.from('devices').insert({ id: deviceId.trim(), status: 'offline', ...payload });
-    if (err) return setError(err.message);
-    setOpen(false); setDeviceId(''); setName('');
+      ? await supabase.from('devices').update(payload).eq('id', cleanId)
+      : await supabase.from('devices').insert({ id: cleanId, status: 'offline', ...payload });
+
+    if (err) {
+      if (err.message?.includes('duplicate key') || err.code === '23505') {
+        return setError(alreadyLinkedMsg);
+      }
+      return setError(err.message);
+    }
+    setOpen(false);
+    setDeviceId('');
+    setName('');
     load();
   };
 
@@ -72,8 +127,23 @@ export default function Devices() {
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div className="rounded-lg bg-bg p-2"><div className="text-xs text-slate-500">{t('devices.sim1')}</div>{d.sim1_operator || '—'}</div>
-                <div className="rounded-lg bg-bg p-2"><div className="text-xs text-slate-500">{t('devices.sim2')}</div>{d.sim2_operator || '—'}</div>
+                <div className="rounded-lg bg-bg p-2">
+                  <div className="text-xs text-slate-500">{t('devices.sim1')} (Slot 0)</div>
+                  {d.sim1_operator || '—'}
+                </div>
+                {singleSimOnly ? (
+                  <div className="rounded-lg bg-bg/50 border border-white/5 p-2 opacity-60" title="Seu plano atual monitora apenas 1 chip (SIM 1). Faça upgrade para liberar Dual-SIM.">
+                    <div className="flex items-center gap-1 text-xs text-slate-500">
+                      <Lock size={11} /> {t('devices.sim2')} (Slot 1)
+                    </div>
+                    <div className="text-xs text-slate-500">Bloqueado no plano</div>
+                  </div>
+                ) : (
+                  <div className="rounded-lg bg-bg p-2">
+                    <div className="text-xs text-slate-500">{t('devices.sim2')} (Slot 1)</div>
+                    {d.sim2_operator || '—'}
+                  </div>
+                )}
               </div>
               <WebhookConfig device={d} userId={user.id} />
               <div className="flex items-center justify-between text-xs text-slate-500">

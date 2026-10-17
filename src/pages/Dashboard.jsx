@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Smartphone, Users, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 
 const count = async (table, filter) => {
   let q = supabase.from(table).select('*', { count: 'exact', head: true });
   if (filter) q = filter(q);
-  const { count: c } = await q;
+  const { count: c, error } = await q;
+  if (error) return null;
   return c ?? 0;
 };
 
@@ -16,7 +18,7 @@ const DEFAULT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 
 function normalizeMonthly(list, monthLabels = DEFAULT_MONTHS) {
   const out = monthLabels.map((label) => ({ label, sent: 0, received: 0, failed: 0 }));
   (list ?? []).forEach((item, i) => {
-    const raw = item.month ?? item.mes ?? i + 1;
+    const raw = item.month_num ?? item.month ?? item.mes ?? i + 1;
     let n = typeof raw === 'string' && raw.includes('-') ? Number(raw.split('-')[1]) : Number(raw);
     if (!(n >= 1 && n <= 12)) n = i + 1;
     if (out[n - 1]) {
@@ -31,8 +33,8 @@ function normalizeMonthly(list, monthLabels = DEFAULT_MONTHS) {
 /** Normaliza by_chip (array ou objeto) para [{ slot, total }] dos slots 0 e 1. */
 function normalizeChips(by) {
   const rows = Array.isArray(by)
-    ? by.map((x) => ({ slot: Number(x.sim_slot ?? x.slot), total: Number(x.total ?? x.count ?? x.sent ?? 0) }))
-    : Object.entries(by ?? {}).map(([slot, total]) => ({ slot: Number(slot), total: Number(total?.total ?? total ?? 0) }));
+    ? by.map((x) => ({ slot: Number(x.sim_slot ?? x.slot), total: Number(x.total ?? x.total_sent ?? x.count ?? x.sent ?? 0) }))
+    : Object.entries(by ?? {}).map(([slot, total]) => ({ slot: Number(slot), total: Number(total?.total ?? total?.total_sent ?? total ?? 0) }));
   return [0, 1].map((slot) => ({ slot, total: rows.filter((r) => r.slot === slot).reduce((a, r) => a + r.total, 0) }));
 }
 
@@ -113,6 +115,7 @@ function ChipBars({ chips, t, fmt }) {
 }
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const { t, lang } = useLanguage();
   const [stats, setStats] = useState({});
   const currentYear = new Date().getFullYear();
@@ -131,20 +134,39 @@ export default function Dashboard() {
   ];
 
   useEffect(() => {
+    if (!user?.id) return;
     (async () => {
+      const { data: userDevs } = await supabase.from('devices').select('id').eq('user_id', user.id);
+      const devIds = (userDevs ?? []).map((d) => d.id);
+
+      const countUserTable = async (table) => {
+        const byUser = await count(table, (q) => q.eq('user_id', user.id));
+        if (byUser !== null) return byUser;
+        if (!devIds.length) return 0;
+        return (await count(table, (q) => q.in('target_device_id', devIds))) ?? 0;
+      };
+
       const [devices, online, contacts, queue, sent, failed] = await Promise.all([
-        count('devices'),
-        count('devices', (q) => q.eq('status', 'online')),
-        count('contacts'),
-        count('sms_queue'),
-        count('sms_sent'),
-        count('sms_failed'),
+        count('devices', (q) => q.eq('user_id', user.id)),
+        count('devices', (q) => q.eq('user_id', user.id).eq('status', 'online')),
+        count('contacts', (q) => q.eq('user_id', user.id)),
+        countUserTable('sms_queue'),
+        countUserTable('sms_sent'),
+        countUserTable('sms_failed'),
       ]);
-      setStats({ devices, online, contacts, queue, sent, failed });
+      setStats({
+        devices: devices ?? 0,
+        online: online ?? 0,
+        contacts: contacts ?? 0,
+        queue: queue ?? 0,
+        sent: sent ?? 0,
+        failed: failed ?? 0,
+      });
     })();
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
+    if (!user?.id) return undefined;
     let alive = true;
     setLoadingChart(true);
     supabase.rpc('get_dashboard_analytics', { p_year: year }).then(({ data, error }) => {
@@ -153,7 +175,7 @@ export default function Dashboard() {
       setLoadingChart(false);
     });
     return () => { alive = false; };
-  }, [year]);
+  }, [year, user?.id]);
 
   const monthly = useMemo(() => normalizeMonthly(analytics?.monthly_evolution, monthLabels), [analytics, monthLabels]);
   const chips = useMemo(() => normalizeChips(analytics?.by_chip), [analytics]);

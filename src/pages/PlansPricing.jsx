@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Check, X, Smartphone, Layers, MessageSquare, CalendarClock, Users, Webhook, ShieldCheck, Loader2, Sparkles, Info,
 } from 'lucide-react';
@@ -10,8 +11,6 @@ const num = (n) => Number(n ?? 0).toLocaleString('pt-BR');
 
 const DISPLAY_NAMES = { FREE: 'Gratuito', STARTER: 'Starter', PRO: 'Profissional', PLUS: 'Empresarial' };
 const POPULAR_PLAN = 'PRO';
-
-const NOTICE = 'O envio do SMS é realizado via aparelho e chips do usuário; a entrega final e créditos do chip são de responsabilidade da operadora de telefonia celular.';
 
 export default function PlansPricing() {
   const { tenant, isMaster } = useAuth();
@@ -52,14 +51,48 @@ export default function PlansPricing() {
     return undefined;
   };
 
-  const highlights = (p) => [
-    { icon: Smartphone, text: `${num(p.max_devices)} aparelho${Number(p.max_devices) === 1 ? '' : 's'} conectado${Number(p.max_devices) === 1 ? '' : 's'}`, ok: true },
-    { icon: Layers, text: 'Rotação multi-chip (Dual-SIM)', ok: true },
-    { icon: MessageSquare, text: `${num(p.max_monthly_sms)} disparos por mês`, ok: true },
-    { icon: CalendarClock, text: 'Agendamento de campanhas', ok: !!p.allow_scheduling },
-    { icon: Users, text: `${num(p.max_contacts)} contatos`, ok: true },
-    ...(p.allow_webhooks !== undefined ? [{ icon: Webhook, text: 'Webhooks de recebimento', ok: !!p.allow_webhooks }] : []),
-  ];
+  const highlights = (p) => {
+    const devs = Number(p.max_devices ?? 1);
+    const slots = Number(p.max_sim_slots ?? (p.id === 'FREE' ? 1 : 2));
+    return [
+      {
+        icon: Smartphone,
+        text: `${num(devs)} aparelho${devs === 1 ? '' : 's'} conectado${devs === 1 ? '' : 's'}`,
+        ok: true,
+      },
+      {
+        icon: Layers,
+        text: slots === 1 ? 'Monitoramento de 1 chip (SIM 1)' : `Monitoramento de ${num(slots)} chips por aparelho`,
+        ok: true,
+      },
+      {
+        icon: Layers,
+        text: 'Rotação multi-chip (Dual-SIM)',
+        ok: slots > 1,
+      },
+      {
+        icon: MessageSquare,
+        text: `${num(p.max_monthly_sms)} disparos por mês *`,
+        subtext: 'Cota de processamento do gateway (via seu chip)',
+        ok: true,
+      },
+      {
+        icon: Webhook,
+        text: devs === 1 ? '1 Webhook + Envio via API HTTP' : `Até ${num(devs)} Webhooks + Envio via API HTTP`,
+        ok: true,
+      },
+      {
+        icon: CalendarClock,
+        text: 'Agendamento de campanhas',
+        ok: !!p.allow_scheduling,
+      },
+      {
+        icon: Users,
+        text: `${num(p.max_contacts)} contatos`,
+        ok: true,
+      },
+    ];
+  };
 
   if (loading) return <p className="text-slate-400">Carregando...</p>;
 
@@ -68,8 +101,8 @@ export default function PlansPricing() {
       <div className="text-center space-y-2">
         <h1 className="text-3xl font-bold text-white">Escolha o plano ideal para o seu volume de SMS</h1>
         <p className="mx-auto max-w-2xl text-slate-400">
-          Use os seus próprios aparelhos e chips como gateway, com rotação automática entre SIM 1 e SIM 2,
-          agendamento inteligente e controle total das campanhas.
+          Use os seus próprios aparelhos e chips como gateway, com integração via API HTTP, Webhooks
+          e controle total das campanhas.
         </p>
       </div>
 
@@ -96,7 +129,7 @@ export default function PlansPricing() {
             </div>
           </div>
           <div className="text-sm text-slate-400">
-            {num(tenant?.max_devices)} aparelho(s) · {num(tenant?.max_monthly_sms)} SMS/mês · {num(tenant?.max_contacts)} contatos
+            {num(tenant?.max_devices ?? 1)} aparelho(s) · {num(tenant?.max_sim_slots ?? (currentPlan === 'FREE' ? 1 : 2))} chip(s) por aparelho · {num(tenant?.max_devices ?? 1)} webhook(s) · API HTTP · {num(tenant?.max_monthly_sms ?? 300)} SMS/mês · {num(tenant?.max_contacts ?? 100)} contatos
           </div>
         </div>
       )}
@@ -144,20 +177,36 @@ export default function PlansPricing() {
 
               <div className="my-5">
                 <div className="text-4xl font-bold text-white">
-                  {free ? 'Grátis' : brl(price)}
+                  {free ? 'Grátis' : `US$ ${(Number(p.price_usd) || Number((price / 5).toFixed(2))).toFixed(2)}`}
                   {!free && <span className="text-sm font-normal text-slate-400">/mês</span>}
                 </div>
-                {Number(p.price_usd) > 0 && <div className="text-xs text-slate-500">US$ {Number(p.price_usd).toFixed(2)}/mo</div>}
+                <div className="mt-1 text-xs font-medium text-slate-400">
+                  {free ? 'US$ 0.00 · R$ 0,00' : `${brl(price)}/mês`}
+                </div>
               </div>
 
               <ul className="flex-1 space-y-3 text-sm">
-                {highlights(p).map(({ icon: Icon, text, ok }) => (
-                  <li key={text} className={`flex items-center gap-3 ${ok ? 'text-slate-200' : 'text-slate-500'}`}>
-                    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${ok ? 'bg-accent/15 text-accent' : 'bg-white/5 text-slate-600'}`}>
+                {highlights(p).map(({ icon: Icon, text, subtext, ok }) => (
+                  <li key={text} className={`flex items-start gap-3 ${ok ? 'text-slate-200' : 'text-slate-500'}`}>
+                    <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${ok ? 'bg-accent/15 text-accent' : 'bg-white/5 text-slate-600'}`}>
                       <Icon size={15} />
                     </span>
-                    <span className="flex-1">{text}</span>
-                    {ok ? <Check size={14} className="text-success" /> : <X size={14} className="text-slate-600" />}
+                    <div className="flex-1 leading-snug">
+                      <div>
+                        {subtext ? (
+                          <a href="#nota-disparos" className="hover:text-accent transition-colors" title="Ver observação importante abaixo">
+                            {text.replace(' *', '')}{' '}
+                            <span className="inline-flex items-center rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+                              * ver nota
+                            </span>
+                          </a>
+                        ) : (
+                          text
+                        )}
+                      </div>
+                      {subtext && <div className="text-[11px] text-slate-400 mt-0.5">{subtext}</div>}
+                    </div>
+                    {ok ? <Check size={14} className="mt-1 shrink-0 text-success" /> : <X size={14} className="mt-1 shrink-0 text-slate-600" />}
                   </li>
                 ))}
               </ul>
@@ -169,9 +218,19 @@ export default function PlansPricing() {
         {!sorted.length && <p className="col-span-full text-center text-slate-400">Nenhum plano disponível.</p>}
       </div>
 
-      <p className="flex items-start justify-center gap-2 text-xs text-slate-500">
-        <Info size={14} className="mt-0.5 shrink-0" />{NOTICE}
-      </p>
+      <div id="nota-disparos" className="card border-slate-800 bg-surface/60 space-y-2.5 text-xs text-slate-400 leading-relaxed">
+        <div className="flex items-center gap-2 font-semibold text-slate-200 text-sm">
+          <Info size={16} className="text-accent shrink-0" />
+          <span>* Como funcionam os disparos mensais e o uso do seu chip</span>
+        </div>
+        <p>
+          <strong className="text-slate-300">1. Sobre a franquia de disparos:</strong> A nossa plataforma atua como um <strong className="text-slate-300">gateway de automação</strong> e <strong className="text-slate-300">não comercializa pacotes de SMS</strong>. O limite mensal de cada plano refere-se à capacidade de gerenciamento e processamento de fila na plataforma. Como os envios são realizados diretamente através dos seus próprios aparelhos e chips conectados, a entrega efetiva das mensagens depende de um plano ou saldo válido junto à sua operadora de telefonia móvel.
+        </p>
+        <p>
+          <strong className="text-slate-300">2. Boas práticas e políticas das operadoras:</strong> O conteúdo das mensagens, a autorização de recebimento dos contatos (opt-in) e a frequência de disparos são definidos exclusivamente pelo usuário. Recomendamos o uso consciente da ferramenta (evitando práticas de spam), pois as operadoras monitoram o tráfego da rede e podem aplicar bloqueios ou restrições ao chip sem ingerência ou responsabilidade da plataforma, conforme detalhado em nossos{' '}
+          <Link to="/termos-de-uso" className="text-accent hover:underline">Termos de Uso</Link>.
+        </p>
+      </div>
     </div>
   );
 }

@@ -55,9 +55,13 @@ export default function Profile() {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setAuthUser(user);
+      if (!user?.id) {
+        setLoading(false);
+        return;
+      }
       const [devices, contacts, rpc] = await Promise.all([
-        supabase.from('devices').select('id', { count: 'exact', head: true }),
-        supabase.from('contacts').select('id', { count: 'exact', head: true }),
+        supabase.from('devices').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+        supabase.from('contacts').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
         supabase.rpc('get_dashboard_analytics'),
       ]);
       setUsage({

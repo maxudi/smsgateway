@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 
 export default function QueueManager() {
+  const { user } = useAuth();
   const { t, lang } = useLanguage();
 
   const tabs = useMemo(() => [
@@ -12,22 +14,42 @@ export default function QueueManager() {
   ], [t]);
 
   const [activeTabKey, setActiveTabKey] = useState('sms_queue');
-  const activeTab = tabs.find((x) => x.key === activeTabKey) || tabs[0];
 
   const [rows, setRows] = useState([]);
   const [counts, setCounts] = useState({});
 
   const load = useCallback(async () => {
+    if (!user?.id) return;
     const current = tabs.find((x) => x.key === activeTabKey) || tabs[0];
-    const { data } = await supabase.from(current.key).select('*')
+    const { data: userDevs } = await supabase.from('devices').select('id').eq('user_id', user.id);
+    const devIds = (userDevs ?? []).map((d) => d.id);
+
+    let { data, error: rowErr } = await supabase.from(current.key).select('*')
+      .eq('user_id', user.id)
       .order(current.order, { ascending: false }).limit(200);
+    if (rowErr) {
+      if (devIds.length) {
+        const res = await supabase.from(current.key).select('*')
+          .in('target_device_id', devIds)
+          .order(current.order, { ascending: false }).limit(200);
+        data = res.data;
+      } else {
+        data = [];
+      }
+    }
     setRows(data ?? []);
+
     const entries = await Promise.all(tabs.map(async (item) => {
-      const { count } = await supabase.from(item.key).select('*', { count: 'exact', head: true });
-      return [item.key, count ?? 0];
+      const { count, error } = await supabase.from(item.key).select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+      if (!error) return [item.key, count ?? 0];
+      if (!devIds.length) return [item.key, 0];
+      const fallback = await supabase.from(item.key).select('*', { count: 'exact', head: true })
+        .in('target_device_id', devIds);
+      return [item.key, fallback.count ?? 0];
     }));
     setCounts(Object.fromEntries(entries));
-  }, [activeTabKey, tabs]);
+  }, [activeTabKey, tabs, user?.id]);
 
   // Realtime nas 3 tabelas + polling de segurança caso o Realtime não esteja habilitado
   useEffect(() => {

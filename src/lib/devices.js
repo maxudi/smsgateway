@@ -12,11 +12,13 @@ export const isActive = isDeviceOnline;
 /**
  * Canais (aparelho x chip): percorre todos os aparelhos no mesmo chip antes de trocar de chip.
  * includeOffline: considera todos os aparelhos cadastrados (agendamento não depende de estar online agora).
+ * maxSimSlots: planos com limite de 1 chip operam exclusivamente no slot 0 (SIM 1).
  */
-export function buildChannels(devices, deviceMode, simMode, includeOffline = false) {
+export function buildChannels(devices, deviceMode, simMode, includeOffline = false, maxSimSlots = 2) {
   const targets = deviceMode === 'all'
     ? (includeOffline ? devices : devices.filter(isActive))
     : devices.filter((d) => d.id === deviceMode);
-  const slots = simMode === 'alternate' ? [0, 1] : [Number(simMode)];
+  const rawSlots = simMode === 'alternate' ? [0, 1] : [Number(simMode)];
+  const slots = Number(maxSimSlots) <= 1 ? [0] : rawSlots;
   return slots.flatMap((slot) => targets.map((d) => ({ deviceId: d.id, slot })));
 }

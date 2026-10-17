@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, Webhook, Eye, EyeOff, Copy, KeyRound, Loader2, Send } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 
 const EVENTS = ['sms_received'];
@@ -22,6 +23,7 @@ const isHttpUrl = (value) => {
 
 /** Seção colapsável de webhook (recebimento de SMS) de um aparelho, persistida em user_webhooks. */
 export default function WebhookConfig({ device, userId }) {
+  const { plan, tenant, isMaster } = useAuth();
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -32,11 +34,15 @@ export default function WebhookConfig({ device, userId }) {
   const [msg, setMsg] = useState(null);
   const [toast, setToast] = useState(null);
 
+  const maxWebhooks = isMaster ? Infinity : Number(plan?.max_webhooks ?? plan?.max_devices ?? tenant?.max_devices ?? 1);
+
   useEffect(() => {
     if (!open || loaded) return;
     (async () => {
       const { data, error } = await supabase.from('user_webhooks').select('*')
-        .eq('device_id', device.id).maybeSingle();
+        .eq('device_id', device.id)
+        .eq('user_id', userId)
+        .maybeSingle();
       if (error) setMsg({ ok: false, text: error.message });
       if (data) {
         setHook(data);
@@ -44,7 +50,7 @@ export default function WebhookConfig({ device, userId }) {
       }
       setLoaded(true);
     })();
-  }, [open, loaded, device.id]);
+  }, [open, loaded, device.id, userId]);
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
@@ -53,11 +59,19 @@ export default function WebhookConfig({ device, userId }) {
     setMsg({ ok: true, text: t('devices.webhookCopied') });
   };
 
-  // Sem depender de constraint única: atualiza o registro do aparelho ou cria um novo
+  // Sem depender de constraint única: atualiza o registro do aparelho ou cria um novo respeitando o limite do plano
   const persist = async (values) => {
+    if (!hook && !isMaster) {
+      const { count } = await supabase.from('user_webhooks')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId);
+      if ((count ?? 0) >= maxWebhooks) {
+        throw new Error(`Seu plano atual permite no máximo ${maxWebhooks} webhook(s) cadastrado(s).`);
+      }
+    }
     const payload = { device_id: device.id, user_id: userId, events: EVENTS, ...values };
     const { data, error } = hook
-      ? await supabase.from('user_webhooks').update(payload).eq('id', hook.id).select().single()
+      ? await supabase.from('user_webhooks').update(payload).eq('id', hook.id).eq('user_id', userId).select().single()
       : await supabase.from('user_webhooks').insert(payload).select().single();
     if (error) throw error;
     setHook(data);

@@ -10,11 +10,14 @@ const cryptoProvider = Stripe.createSubtleCryptoProvider();
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
 const FREE_PLAN = "FREE";
-const ENDED_STATUSES = ["canceled", "unpaid", "incomplete_expired"];
+const ENDED_STATUSES = ["canceled", "unpaid", "incomplete_expired", "past_due"];
 
-async function setTenantPlan(tenantId: string | undefined, plano: string) {
+async function setTenantPlan(tenantId: string | undefined, plano: string, subscriptionStatus = "ACTIVE") {
   if (!tenantId) return;
-  const { error } = await admin.from("tenants").update({ plano }).eq("id", tenantId);
+  const { error } = await admin
+    .from("tenants")
+    .update({ plano, subscription_status: subscriptionStatus })
+    .eq("id", tenantId);
   if (error) throw new Error(`Falha ao atualizar tenant ${tenantId}: ${error.message}`);
 }
 
@@ -37,14 +40,24 @@ Deno.serve(async (req) => {
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
       if (session.payment_status === "paid" || session.status === "complete") {
-        await setTenantPlan(session.metadata?.tenant_id, session.metadata?.plan_id ?? FREE_PLAN);
+        await setTenantPlan(session.metadata?.tenant_id, session.metadata?.plan_id ?? FREE_PLAN, "ACTIVE");
       }
     } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
       const sub = event.data.object as Stripe.Subscription;
       const ended = event.type === "customer.subscription.deleted" || ENDED_STATUSES.includes(sub.status);
-      // Assinatura encerrada volta ao plano gratuito; mudanças ativas mantêm o plano do metadata
-      if (ended) await setTenantPlan(sub.metadata?.tenant_id, FREE_PLAN);
-      else if (sub.metadata?.plan_id) await setTenantPlan(sub.metadata.tenant_id, sub.metadata.plan_id);
+      // Assinatura encerrada ou inadimplente volta ao plano gratuito automaticamente
+      if (ended) {
+        const subStatus = sub.status === "past_due" || sub.status === "unpaid" ? "PAST_DUE" : "CANCELED";
+        await setTenantPlan(sub.metadata?.tenant_id, FREE_PLAN, subStatus);
+      } else if (sub.metadata?.plan_id) {
+        await setTenantPlan(sub.metadata.tenant_id, sub.metadata.plan_id, "ACTIVE");
+      }
+    } else if (event.type === "invoice.payment_failed") {
+      const invoice = event.data.object as Stripe.Invoice;
+      const tenantId = (invoice.subscription_details?.metadata as any)?.tenant_id || (invoice.metadata as any)?.tenant_id;
+      if (tenantId) {
+        await setTenantPlan(tenantId, FREE_PLAN, "PAST_DUE");
+      }
     }
   } catch (err) {
     console.error(err);

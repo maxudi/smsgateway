@@ -58,9 +58,12 @@ function buildStats(rows) {
 }
 
 export default function CampaignsManager() {
-  const { user } = useAuth();
+  const { user, plan, isMaster } = useAuth();
   const navigate = useNavigate();
   const { devices } = useDevices(user.id);
+
+  const maxSimSlots = isMaster ? 2 : Number(plan?.max_sim_slots ?? 1);
+  const singleSimOnly = !isMaster && maxSimSlots <= 1;
 
   const [campaigns, setCampaigns] = useState([]);
   const [stats, setStats] = useState({});
@@ -148,7 +151,9 @@ export default function CampaignsManager() {
   const openChips = (c) => {
     setChips({
       deviceMode: c.target_device_id ?? 'all',
-      simMode: c.sim_slot_preference === null || c.sim_slot_preference === undefined ? 'alternate' : String(c.sim_slot_preference),
+      simMode: singleSimOnly
+        ? '0'
+        : (c.sim_slot_preference === null || c.sim_slot_preference === undefined ? 'alternate' : String(c.sim_slot_preference)),
     });
     setChipsFor(c);
   };
@@ -156,7 +161,8 @@ export default function CampaignsManager() {
   const applyChips = async () => {
     const c = chipsFor;
     setChipsFor(null);
-    await run(c, () => reassignCampaign(c, chips.deviceMode, chips.simMode, progress('Reatribuindo')), 'Aparelho e chip atualizados.');
+    const effSim = singleSimOnly ? '0' : chips.simMode;
+    await run(c, () => reassignCampaign(c, chips.deviceMode, effSim, progress('Reatribuindo'), maxSimSlots), 'Aparelho e chip atualizados.');
   };
 
   const remove = (c) => {
@@ -297,10 +303,15 @@ export default function CampaignsManager() {
             </div>
             <div>
               <label className="label">Chip</label>
-              <select className="input" value={chips.simMode} onChange={(e) => setChips({ ...chips, simMode: e.target.value })}>
-                <option value="alternate">Alternar entre SIM 1 e SIM 2</option>
+              <select className="input" value={singleSimOnly ? '0' : chips.simMode} disabled={singleSimOnly}
+                onChange={(e) => setChips({ ...chips, simMode: e.target.value })}>
                 <option value="0">Apenas SIM 1 (slot 0)</option>
-                <option value="1">Apenas SIM 2 (slot 1)</option>
+                <option value="alternate" disabled={singleSimOnly}>
+                  Alternar entre SIM 1 e SIM 2{singleSimOnly ? ' (apenas planos Dual-SIM)' : ''}
+                </option>
+                <option value="1" disabled={singleSimOnly}>
+                  Apenas SIM 2 (slot 1){singleSimOnly ? ' (apenas planos Dual-SIM)' : ''}
+                </option>
               </select>
             </div>
             <button className="btn-primary w-full" onClick={applyChips}>Aplicar</button>

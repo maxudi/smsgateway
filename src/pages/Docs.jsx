@@ -43,23 +43,31 @@ const i18n = {
     steps: [
       {
         step: '1',
-        title: 'Create Account & Generate Token',
-        desc: 'Log in to your SMSMax dashboard and navigate to the "API Tokens" section to generate your unique live access token.',
+        where: 'phone',
+        whereLabel: 'On Android Phone',
+        title: 'Download APK & Generate Device ID',
+        desc: 'Download and install the official SMSMax APK on your Android smartphone with an active SIM card. Open the app, grant SMS/Phone permissions, and copy your generated Device ID code.',
       },
       {
         step: '2',
-        title: 'Install Android Gateway APK',
-        desc: 'Download and install the official SMSMax APK on an Android smartphone equipped with active SIM cards. Grant SMS and phone permissions.',
+        where: 'web',
+        whereLabel: 'On Web Dashboard',
+        title: 'Create Account, Link Device & Token',
+        desc: 'Log in to your SMSMax dashboard, register your smartphone using the Device ID in "Devices", and generate your access token in "API Tokens".',
       },
       {
         step: '3',
+        where: 'phone',
+        whereLabel: 'On Android Phone',
         title: 'Start Service & Optimize Battery',
         desc: 'Launch the app and tap "Start Service" until the indicator turns green (Connected). Disable Android battery optimization so the app runs uninterrupted.',
       },
       {
         step: '4',
-        title: 'Send Your First SMS',
-        desc: 'Trigger your first test SMS using the cURL command below or import the node directly into your automation platform (such as n8n).',
+        where: 'web',
+        whereLabel: 'Platform & Automation',
+        title: 'Send First Test & Automate',
+        desc: 'Send your first test SMS directly through the platform ("Send SMS" tab) and you are also ready to use automation platforms (like n8n, Make, or cURL) — see the examples below.',
       },
     ],
 
@@ -80,7 +88,7 @@ const i18n = {
         name: 'to',
         type: 'string',
         required: 'Required',
-        desc: 'Destination phone number including country code and area code (e.g. "+5534988012700").',
+        desc: 'Destination phone number including country code and area code (e.g. "+553499999999").',
       },
       {
         name: 'message',
@@ -172,23 +180,31 @@ const i18n = {
     steps: [
       {
         step: '1',
-        title: 'Criar Conta e Gerar Token',
-        desc: 'Acesse seu painel SMSMax e entre na aba "Integrações / API" para gerar seu token seguro de acesso.',
+        where: 'phone',
+        whereLabel: 'No Celular',
+        title: 'Baixar APK e Gerar Device ID',
+        desc: 'Baixe e instale o APK oficial do SMSMax Gateway no celular Android com chip ativo. Abra o app, conceda as permissões de SMS/Telefone e copie o código Device ID gerado.',
       },
       {
         step: '2',
-        title: 'Instalar APK no Celular Android',
-        desc: 'Baixe e instale o APK oficial do SMSMax Gateway no smartphone com chip(s) ativos. Conceda as permissões de SMS e Telefone solicitadas.',
+        where: 'web',
+        whereLabel: 'No Painel Web',
+        title: 'Criar Conta, Vincular Aparelho e Token',
+        desc: 'Acesse o painel SMSMax, cadastre o código Device ID na aba "Dispositivos" e gere seu token de acesso em "Tokens de API".',
       },
       {
         step: '3',
+        where: 'phone',
+        whereLabel: 'No Celular',
         title: 'Iniciar Serviço e Ajustar Bateria',
         desc: 'Abra o app e toque em "Iniciar Serviço" até o indicador exibir "Conectado" em verde. Desative a otimização de bateria do Android para manter o app ativo.',
       },
       {
         step: '4',
-        title: 'Realizar Primeiro Disparo de Teste',
-        desc: 'Envie seu primeiro SMS de teste usando o comando cURL abaixo ou importe o nó configurado direto na sua ferramenta de automação (como n8n).',
+        where: 'web',
+        whereLabel: 'Plataforma & Automação',
+        title: 'Primeiro Teste e Automação',
+        desc: 'Envie seu primeiro disparo de teste direto pela plataforma (aba "Disparar") e você já estará apto também a usar plataformas de automação (como n8n, Make ou via cURL) — veja os exemplos abaixo.',
       },
     ],
 
@@ -209,7 +225,7 @@ const i18n = {
         name: 'to',
         type: 'string',
         required: 'Obrigatório',
-        desc: 'Número de telefone com código do país e DDD (ex: "+5534988012700").',
+        desc: 'Número de telefone com código do país e DDD (ex: "+553499999999").',
       },
       {
         name: 'message',
@@ -300,7 +316,7 @@ export default function Docs({ standalone = false }) {
   -H "Authorization: Bearer <SEU_API_TOKEN>" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "to": "+5534988012700",
+    "to": "+553499999999",
     "message": "${lang === 'en' ? 'Hello from SMSMax Gateway API!' : 'Ola! Teste de envio de SMS via API do Max Netminas.'}",
     "sim_slot": 0,
     "target_device_id": "ALL"
@@ -351,9 +367,7 @@ export default function Docs({ standalone = false }) {
       <header className="border-b border-white/5 pb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1.5">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-accent/15 text-accent flex items-center justify-center shadow-lg shadow-accent/5">
-              <BookOpen size={22} />
-            </div>
+            <img src="/logo-icon.png" alt="SMSMax" className="h-10 w-10 object-contain shrink-0" />
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xl font-bold text-white tracking-tight">SMSMax</span>
@@ -466,22 +480,36 @@ export default function Docs({ standalone = false }) {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {t.steps.map((st) => (
-            <div
-              key={st.step}
-              className="card relative flex flex-col justify-between p-5 border border-white/10 hover:border-accent/40 transition group space-y-3"
-            >
-              <div className="space-y-2">
-                <div className="h-8 w-8 rounded-lg bg-accent/15 text-accent font-bold text-sm flex items-center justify-center group-hover:scale-105 transition">
-                  {st.step}
-                </div>
-                <h3 className="font-bold text-white text-sm leading-snug">
-                  {st.title}
-                </h3>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  {st.desc}
-                </p>
-                {st.step === '2' && (
+          {t.steps.map((st) => {
+            const isPhone = st.where === 'phone';
+            return (
+              <div
+                key={st.step}
+                className="card relative flex flex-col justify-between p-5 border border-white/10 hover:border-accent/40 transition group space-y-3"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="h-8 w-8 rounded-lg bg-accent/15 text-accent font-bold text-sm flex items-center justify-center group-hover:scale-105 transition">
+                      {st.step}
+                    </div>
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold border ${
+                        isPhone
+                          ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                          : 'bg-accent/15 text-accent border-accent/30'
+                      }`}
+                    >
+                      {isPhone ? <Smartphone size={12} /> : <Globe size={12} />}
+                      <span>{st.whereLabel}</span>
+                    </span>
+                  </div>
+                  <h3 className="font-bold text-white text-sm leading-snug">
+                    {st.title}
+                  </h3>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    {st.desc}
+                  </p>
+                {st.step === '1' && (
                   <div className="pt-2">
                     <a
                       href="https://api.smsmax.netminas.com/storage/v1/object/public/app/app-release.apk"
@@ -497,7 +525,8 @@ export default function Docs({ standalone = false }) {
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 

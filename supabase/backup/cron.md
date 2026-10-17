@@ -1,0 +1,4 @@
+| jobid | schedule  | command                                           | active | script_recriacao                                                                        |
+| ----- | --------- | ------------------------------------------------- | ------ | --------------------------------------------------------------------------------------- |
+| 5     | * * * * * | SELECT public.process_due_sms_schedules(150);     | true   | SELECT cron.schedule('* * * * *', 'SELECT public.process_due_sms_schedules(150);');     |
+| 6     | * * * * * | SELECT public.process_webhook_delivery_queue(50); | true   | SELECT cron.schedule('* * * * *', 'SELECT public.process_webhook_delivery_queue(50);'); |

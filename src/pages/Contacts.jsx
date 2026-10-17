@@ -29,7 +29,8 @@ function parseCsv(text) {
 }
 
 export default function Contacts() {
-  const { user } = useAuth();
+  const { user, plan, isMaster } = useAuth();
+  const maxContacts = isMaster ? Infinity : Number(plan?.max_contacts ?? 100);
   const [contacts, setContacts] = useState([]);
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
@@ -68,6 +69,9 @@ export default function Contacts() {
   const add = async (e) => {
     e.preventDefault();
     if (!form.valid) return setMsg('Telefone incompleto para o país selecionado.');
+    if (contacts.length >= maxContacts) {
+      return setMsg(`Limite de contatos do seu plano atingido (${maxContacts} contatos). Faça upgrade para cadastrar mais.`);
+    }
     const { data: created, error } = await supabase.from('contacts').insert({
       user_id: user.id, name: form.name.trim(), phone: form.phone, tipo: form.tipo.trim() || null,
     }).select('id').single();
@@ -105,8 +109,17 @@ export default function Contacts() {
     // Evita duplicados já existentes
     const existing = new Set(contacts.map((c) => c.phone));
     const fresh = rows.filter((r) => !existing.has(r.phone));
-    const { error } = await supabase.from('contacts').insert(fresh);
-    setMsg(error ? error.message : `${fresh.length} contato(s) importado(s); ${rows.length - fresh.length} ignorado(s) por duplicidade.`);
+    const availableSlots = maxContacts === Infinity ? fresh.length : Math.max(0, maxContacts - contacts.length);
+    if (availableSlots <= 0) {
+      fileRef.current.value = '';
+      return setMsg(`Limite de contatos do seu plano atingido (${maxContacts} contatos). Faça upgrade para importar mais.`);
+    }
+    const allowedFresh = fresh.slice(0, availableSlots);
+    const { error } = await supabase.from('contacts').insert(allowedFresh);
+    const quotaSkipped = fresh.length - allowedFresh.length;
+    setMsg(error
+      ? error.message
+      : `${allowedFresh.length} contato(s) importado(s); ${rows.length - fresh.length} ignorado(s) por duplicidade${quotaSkipped > 0 ? `; ${quotaSkipped} não importado(s) pelo limite do plano (${maxContacts})` : ''}.`);
     fileRef.current.value = '';
     load();
   };
