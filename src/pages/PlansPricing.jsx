@@ -33,10 +33,15 @@ export default function PlansPricing() {
   const subscribe = async (plan) => {
     setError(null);
     if (!tenant?.id) return setError('Conta (tenant) não encontrada. Não é possível iniciar o pagamento.');
-    if (!plan.stripe_price_id) return setError('Este plano ainda não está configurado para pagamento.');
+    if (!plan.stripe_price_id || String(plan.stripe_price_id).includes('SEU_PRICE_ID')) {
+      return setError(
+        `O plano "${plan.name}" ainda está com um código Stripe de exemplo (${plan.stripe_price_id || 'vazio'}). Acesse o menu Admin Master → Configurar Planos e informe o código "price_..." real criado no seu Stripe.`
+      );
+    }
     setPayingId(plan.id);
     const { data: session, error: fnErr } = await supabase.functions.invoke('create-checkout-session', {
       body: {
+        priceId: plan.stripe_price_id,
         planId: plan.id,
         tenantId: tenant.id,
         successUrl: `${window.location.origin}/perfil?pagamento=sucesso`,
@@ -45,7 +50,16 @@ export default function PlansPricing() {
     });
     if (fnErr || !session?.url) {
       setPayingId(null);
-      return setError(fnErr?.message ?? 'Não foi possível criar a sessão de pagamento.');
+      let detail = session?.error || fnErr?.message || 'Não foi possível criar a sessão de pagamento.';
+      if (fnErr?.context && typeof fnErr.context.json === 'function') {
+        try {
+          const errBody = await fnErr.context.json();
+          if (errBody?.error) detail = errBody.error;
+        } catch {
+          // ignore
+        }
+      }
+      return setError(detail);
     }
     window.location.href = session.url;
     return undefined;
