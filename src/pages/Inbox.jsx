@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Inbox as InboxIcon, Star, Reply, Trash2, Search, Smartphone,
-  Copy, Check, RefreshCw, MessageSquare, Layers, AlertTriangle
+  Copy, Check, RefreshCw, MessageSquare, Layers, AlertTriangle,
+  Lock, Unlock, ShieldAlert
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -37,12 +38,13 @@ export default function Inbox() {
   const [messages, setMessages] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filterTab, setFilterTab] = useState('all'); // 'all' | 'starred'
+  const [filterTab, setFilterTab] = useState('all'); // 'all' | 'paused' | 'starred'
   const [deviceFilter, setDeviceFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
   const [copiedId, setCopiedId] = useState(null);
   const [replyTarget, setReplyTarget] = useState(null);
+  const [togglingPhone, setTogglingPhone] = useState(null);
   const [error, setError] = useState('');
   const [localStarred, setLocalStarred] = useState(() => getLocalStarredSet());
 
@@ -55,32 +57,32 @@ export default function Inbox() {
     return m;
   }, [devices]);
 
-  // Mapa de telefone (últimos 10/11 dígitos ou completo) -> Nome do contato
-  const contactNameByPhone = useMemo(() => {
+  // Mapa de telefone (últimos 10/11 dígitos ou completo) -> Objeto completo do contato
+  const contactByPhone = useMemo(() => {
     const m = new Map();
     contacts.forEach((c) => {
-      if (!c.name || !c.phone) return;
+      if (!c.phone) return;
       const digits = String(c.phone).replace(/\D/g, '');
       if (!digits) return;
-      m.set(digits, c.name);
-      if (digits.length >= 11) m.set(digits.slice(-11), c.name);
-      if (digits.length >= 10) m.set(digits.slice(-10), c.name);
+      m.set(digits, c);
+      if (digits.length >= 11) m.set(digits.slice(-11), c);
+      if (digits.length >= 10) m.set(digits.slice(-10), c);
     });
     return m;
   }, [contacts]);
 
-  const resolveContactName = useCallback(
+  const resolveContact = useCallback(
     (senderPhone) => {
       const digits = String(senderPhone || '').replace(/\D/g, '');
       if (!digits) return null;
       return (
-        contactNameByPhone.get(digits) ||
-        (digits.length >= 11 ? contactNameByPhone.get(digits.slice(-11)) : null) ||
-        (digits.length >= 10 ? contactNameByPhone.get(digits.slice(-10)) : null) ||
+        contactByPhone.get(digits) ||
+        (digits.length >= 11 ? contactByPhone.get(digits.slice(-11)) : null) ||
+        (digits.length >= 10 ? contactByPhone.get(digits.slice(-10)) : null) ||
         null
       );
     },
-    [contactNameByPhone]
+    [contactByPhone]
   );
 
   const load = useCallback(async () => {
@@ -89,7 +91,11 @@ export default function Inbox() {
     try {
       const [{ data: userDevs }, { data: contactRows }] = await Promise.all([
         supabase.from('devices').select('id').eq('user_id', user.id),
-        supabase.from('contacts').select('id, name, phone').eq('user_id', user.id).limit(2000),
+        supabase
+          .from('contacts')
+          .select('id, name, phone, opted_out, opted_out_at')
+          .eq('user_id', user.id)
+          .limit(3000),
       ]);
 
       if (contactRows) setContacts(contactRows);
@@ -122,6 +128,7 @@ export default function Inbox() {
     const channel = supabase
       .channel('inbox-watch')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sms_inbound' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, load)
       .subscribe();
     const timer = setInterval(load, 10000);
     return () => {
@@ -150,6 +157,79 @@ export default function Inbox() {
 
     // Persiste no banco caso a coluna is_starred já exista
     await supabase.from('sms_inbound').update({ is_starred: nextVal }).eq('id', row.id);
+  };
+
+  /**
+   * Alterna o bloqueio/pausa de campanhas para o remetente com 1 clique direto na Inbox.
+   * - Se estiver pausado (opted_out = true) -> Desbloqueia (opted_out = false) e limpa needs_review.
+   * - Se estiver liberado -> Bloqueia (opted_out = true) e cancela envios de campanha pendentes.
+   */
+  const toggleCampaignBlock = async (row, forceUnlock = null) => {
+    if (!user?.id) return;
+    const rawDigits = String(row.sender_phone || '').replace(/\D/g, '');
+    if (!rawDigits) return;
+
+    const existingContact = resolveContact(row.sender_phone);
+    const currentlyBlocked = Boolean(existingContact?.opted_out);
+    const nextBlocked = forceUnlock !== null ? !forceUnlock : !currentlyBlocked;
+
+    setTogglingPhone(row.id);
+    setError('');
+    try {
+      if (existingContact?.id) {
+        const { error: upErr } = await supabase
+          .from('contacts')
+          .update({
+            opted_out: nextBlocked,
+            opted_out_at: nextBlocked ? new Date().toISOString() : null,
+          })
+          .eq('id', existingContact.id)
+          .eq('user_id', user.id);
+
+        if (upErr) throw upErr;
+
+        setContacts((prev) =>
+          prev.map((c) =>
+            c.id === existingContact.id
+              ? { ...c, opted_out: nextBlocked, opted_out_at: nextBlocked ? new Date().toISOString() : null }
+              : c
+          )
+        );
+      } else if (nextBlocked) {
+        // Caso o número tenha vindo de disparo avulso/manual e ainda não esteja na agenda,
+        // cria o registro marcado como opted_out para impedir futuras campanhas para ele
+        const normalizedPhone = rawDigits.startsWith('55') && rawDigits.length >= 12 ? rawDigits.slice(2) : rawDigits;
+        const { data: inserted, error: insErr } = await supabase
+          .from('contacts')
+          .insert({
+            user_id: user.id,
+            name: `Contato (${row.sender_phone})`,
+            phone: normalizedPhone,
+            opted_out: true,
+            opted_out_at: new Date().toISOString(),
+          })
+          .select('id, name, phone, opted_out, opted_out_at')
+          .single();
+
+        if (insErr) throw insErr;
+        if (inserted) setContacts((prev) => [inserted, ...prev]);
+      }
+
+      // Atualiza flag needs_review na mensagem recebida (se desbloqueou, já foi avaliada)
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === row.id ? { ...m, needs_review: nextBlocked } : m
+        )
+      );
+      await supabase
+        .from('sms_inbound')
+        .update({ needs_review: nextBlocked })
+        .eq('id', row.id);
+    } catch (err) {
+      setError(err?.message || (isPt ? 'Não foi possível alterar o status do contato.' : 'Failed to update contact status.'));
+    } finally {
+      setTogglingPhone(null);
+    }
   };
 
   const deleteOne = async (id) => {
@@ -194,23 +274,38 @@ export default function Inbox() {
     }
   };
 
+  const isRowPausedOrReview = useCallback(
+    (row) => {
+      const c = resolveContact(row.sender_phone);
+      return Boolean(c?.opted_out || row.needs_review);
+    },
+    [resolveContact]
+  );
+
   const filteredMessages = useMemo(() => {
     const q = search.trim().toLowerCase();
     return messages.filter((m) => {
       if (filterTab === 'starred' && !isRowStarred(m)) return false;
+      if (filterTab === 'paused' && !isRowPausedOrReview(m)) return false;
       if (deviceFilter !== 'all' && m.device_id !== deviceFilter) return false;
       if (q) {
-        const contactName = resolveContactName(m.sender_phone) || '';
+        const contact = resolveContact(m.sender_phone);
+        const contactName = contact?.name || '';
         const hay = `${m.sender_phone || ''} ${contactName} ${m.message || ''} ${deviceMap.get(m.device_id) || ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [messages, filterTab, deviceFilter, search, isRowStarred, resolveContactName, deviceMap]);
+  }, [messages, filterTab, deviceFilter, search, isRowStarred, isRowPausedOrReview, resolveContact, deviceMap]);
 
   const starredCount = useMemo(
     () => messages.filter((m) => isRowStarred(m)).length,
     [messages, isRowStarred]
+  );
+
+  const pausedCount = useMemo(
+    () => messages.filter((m) => isRowPausedOrReview(m)).length,
+    [messages, isRowPausedOrReview]
   );
 
   const toggleSelectAll = () => {
@@ -236,8 +331,8 @@ export default function Inbox() {
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
             {isPt
-              ? 'Acompanhe os SMS recebidos nos seus aparelhos Android, destaque mensagens importantes e responda com 1 clique.'
-              : 'Monitor incoming SMS on your Android devices, star important messages, and reply with 1 click.'}
+              ? 'Quando um contato responde a uma campanha, ele é pausado preventivamente para novos disparos em massa até você avaliar ou responder aqui.'
+              : 'When a contact replies to a campaign, they are preventively paused from bulk campaigns until you review or unlock them here.'}
           </p>
         </div>
 
@@ -265,7 +360,7 @@ export default function Inbox() {
 
       {/* Barra de Abas + Busca + Filtro de Aparelho */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setFilterTab('all')}
@@ -279,6 +374,27 @@ export default function Inbox() {
             {isPt ? 'Todas' : 'All'}
             <span className="ml-1 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px]">
               {messages.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setFilterTab('paused')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 ${
+              filterTab === 'paused'
+                ? 'bg-orange-500/15 text-orange-300 border border-orange-500/30'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+            title={
+              isPt
+                ? 'Contatos que responderam e estão pausados para campanhas aguardando sua avaliação'
+                : 'Contacts who replied and are paused from campaigns awaiting your review'
+            }
+          >
+            <ShieldAlert size={14} className={filterTab === 'paused' ? 'text-orange-400' : ''} />
+            {isPt ? 'Interações / Pausados' : 'Interactions / Paused'}
+            <span className="ml-1 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px]">
+              {pausedCount}
             </span>
           </button>
 
@@ -349,7 +465,7 @@ export default function Inbox() {
               <th className="p-3 w-10 text-center" title={isPt ? 'Importante' : 'Important'}>
                 <Star size={14} className="mx-auto text-slate-500" />
               </th>
-              <th className="p-3">{isPt ? 'Remetente' : 'Sender'}</th>
+              <th className="p-3">{isPt ? 'Remetente / Status' : 'Sender / Status'}</th>
               <th className="p-3">{isPt ? 'Mensagem Recebida' : 'Message'}</th>
               <th className="p-3">{isPt ? 'Aparelho / Chip' : 'Device / SIM'}</th>
               <th className="p-3">{isPt ? 'Recebido em' : 'Received At'}</th>
@@ -371,15 +487,22 @@ export default function Inbox() {
                     ? isPt
                       ? 'Nenhuma mensagem marcada como importante.'
                       : 'No messages marked as important.'
-                    : isPt
-                      ? 'Nenhuma mensagem recebida até o momento.'
-                      : 'No incoming messages received yet.'}
+                    : filterTab === 'paused'
+                      ? isPt
+                        ? 'Nenhum contato pausado ou aguardando avaliação no momento.'
+                        : 'No paused contacts awaiting review at the moment.'
+                      : isPt
+                        ? 'Nenhuma mensagem recebida até o momento.'
+                        : 'No incoming messages received yet.'}
                 </td>
               </tr>
             ) : (
               filteredMessages.map((row) => {
                 const starred = isRowStarred(row);
-                const contactName = resolveContactName(row.sender_phone);
+                const contact = resolveContact(row.sender_phone);
+                const contactName = contact?.name || null;
+                const isBlocked = Boolean(contact?.opted_out);
+                const needsReview = Boolean(row.needs_review || isBlocked);
                 const devName = deviceMap.get(row.device_id) || row.device_id;
                 const slotNum = Number(row.sim_slot ?? 0) + 1;
 
@@ -387,7 +510,11 @@ export default function Inbox() {
                   <tr
                     key={row.id}
                     className={`transition hover:bg-white/[0.03] ${
-                      starred ? 'bg-amber-500/[0.04]' : ''
+                      needsReview
+                        ? 'bg-orange-500/[0.04]'
+                        : starred
+                          ? 'bg-amber-500/[0.04]'
+                          : ''
                     }`}
                   >
                     {/* Checkbox */}
@@ -424,7 +551,7 @@ export default function Inbox() {
                       </button>
                     </td>
 
-                    {/* Remetente */}
+                    {/* Remetente + Status em Campanhas */}
                     <td className="p-3 align-top whitespace-nowrap">
                       {contactName && (
                         <div className="text-xs font-semibold text-white mb-0.5">
@@ -434,6 +561,25 @@ export default function Inbox() {
                       <div className="font-mono text-xs text-accent">
                         {row.sender_phone}
                       </div>
+
+                      {isBlocked ? (
+                        <div
+                          className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-orange-500/35 bg-orange-500/15 px-2 py-0.5 text-[10px] font-semibold text-orange-300"
+                          title={
+                            isPt
+                              ? 'Este número respondeu e foi pausado preventivamente para novas campanhas em massa (automações via API/n8n continuam funcionando normalmente).'
+                              : 'This number replied and was preventively paused from bulk campaigns (API/n8n automations still work normally).'
+                          }
+                        >
+                          <Lock size={10} />
+                          {isPt ? 'Pausado em Campanhas' : 'Paused in Campaigns'}
+                        </div>
+                      ) : contact ? (
+                        <div className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+                          <Unlock size={10} />
+                          {isPt ? 'Ativo p/ Campanhas' : 'Active for Campaigns'}
+                        </div>
+                      ) : null}
                     </td>
 
                     {/* Mensagem */}
@@ -441,6 +587,13 @@ export default function Inbox() {
                       <p className="text-slate-200 text-xs sm:text-sm whitespace-pre-wrap break-words leading-relaxed">
                         {row.message}
                       </p>
+                      {isBlocked && (
+                        <p className="mt-1 text-[11px] text-orange-300/80">
+                          {isPt
+                            ? '💬 Avalie a interação: se foi uma dúvida/conversa normal, clique em "Desbloquear" ou responda.'
+                            : '💬 Review interaction: if it was a normal question, click "Unlock" or reply.'}
+                        </p>
+                      )}
                     </td>
 
                     {/* Aparelho & Chip */}
@@ -473,6 +626,7 @@ export default function Inbox() {
                             setReplyTarget({
                               ...row,
                               contactName,
+                              contact,
                             })
                           }
                           className="inline-flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/15 px-2.5 py-1.5 text-xs font-semibold text-accent hover:bg-accent hover:text-bg transition"
@@ -480,6 +634,38 @@ export default function Inbox() {
                         >
                           <Reply size={13} />
                           <span>{isPt ? 'Responder' : 'Reply'}</span>
+                        </button>
+
+                        {/* Botão Desbloquear / Bloquear p/ Campanhas */}
+                        <button
+                          type="button"
+                          disabled={togglingPhone === row.id}
+                          onClick={() => toggleCampaignBlock(row)}
+                          className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+                            isBlocked
+                              ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500 hover:text-bg'
+                              : 'border-white/10 bg-white/5 text-slate-300 hover:border-orange-500/40 hover:bg-orange-500/15 hover:text-orange-300'
+                          }`}
+                          title={
+                            isBlocked
+                              ? isPt
+                                ? 'Desbloquear este número para voltar a receber campanhas'
+                                : 'Unlock this number to receive campaigns again'
+                              : isPt
+                                ? 'Bloquear/pausar este número para campanhas em massa'
+                                : 'Block/pause this number from bulk campaigns'
+                          }
+                        >
+                          {isBlocked ? <Unlock size={13} /> : <Lock size={13} />}
+                          <span>
+                            {isBlocked
+                              ? isPt
+                                ? 'Desbloquear'
+                                : 'Unlock'
+                              : isPt
+                                ? 'Bloquear'
+                                : 'Block'}
+                          </span>
                         </button>
 
                         {/* Botão Copiar */}
@@ -537,8 +723,14 @@ export default function Inbox() {
         devices={devices}
         singleSimOnly={singleSimOnly}
         replyTo={replyTarget}
+        onUnlockContact={
+          replyTarget
+            ? () => toggleCampaignBlock(replyTarget, true)
+            : undefined
+        }
         onSent={() => {
           refreshProfile();
+          load();
         }}
       />
     </div>

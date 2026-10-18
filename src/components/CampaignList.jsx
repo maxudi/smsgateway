@@ -56,13 +56,18 @@ export default function CampaignList({ userId, onEdit, notice }) {
       ]);
       // Concluída e sem itens em trânsito: reaproveita a contagem anterior em vez de reconsultar
       const prev = countsRef.current[c.id];
-      if (String(c.status).toUpperCase() === 'COMPLETED' && !waiting && !firing && prev) {
-        return [c.id, { ...prev, waiting, firing }];
-      }
-      const [queueSent, failed] = await Promise.all([
-        head('sms_queue', c.id, ['SENT', 'DELIVERED']), head('sms_queue', c.id, 'FAILED'),
+      const [queueSent, failed, linkRes] = await Promise.all([
+        prev && String(c.status).toUpperCase() === 'COMPLETED' && !waiting && !firing
+          ? Promise.resolve(prev.sent)
+          : head('sms_queue', c.id, ['SENT', 'DELIVERED']),
+        prev && String(c.status).toUpperCase() === 'COMPLETED' && !waiting && !firing
+          ? Promise.resolve(prev.failed)
+          : head('sms_queue', c.id, 'FAILED'),
+        supabase.from('short_links').select('clicks').eq('campaign_id', c.id).gt('clicks', 0),
       ]);
-      return [c.id, { waiting, firing, sent: queueSent, failed }];
+      const clickedContacts = (linkRes?.data ?? []).length;
+      const totalClicks = (linkRes?.data ?? []).reduce((sum, r) => sum + Number(r.clicks ?? 0), 0);
+      return [c.id, { waiting, firing, sent: queueSent, failed, clickedContacts, totalClicks }];
     }));
     countsRef.current = Object.fromEntries(entries);
     setCounts(countsRef.current);
@@ -134,8 +139,16 @@ export default function CampaignList({ userId, onEdit, notice }) {
             </div>
 
             <div>
-              <div className="mb-1 flex justify-between text-xs text-slate-400">
-                <span>{sent} / {total} enviados · {cnt.waiting} agendados · {cnt.firing} disparando · {failed} falhas</span><span>{pct}%</span>
+              <div className="mb-1 flex flex-wrap justify-between gap-2 text-xs text-slate-400">
+                <span>
+                  {sent} / {total} enviados · {cnt.waiting} agendados · {cnt.firing} disparando · {failed} falhas
+                  {(cnt.totalClicks > 0 || /\{link\}/i.test(c.message_template || '')) && (
+                    <span className="ml-2 inline-flex items-center rounded bg-emerald-500/15 px-1.5 py-0.5 text-[11px] font-medium text-emerald-300">
+                      🔗 {cnt.clickedContacts ?? 0} clicaram ({cnt.totalClicks ?? 0} cliques)
+                    </span>
+                  )}
+                </span>
+                <span>{pct}%</span>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-bg">
                 <div className="h-full bg-success" style={{ width: `${pct}%` }} />

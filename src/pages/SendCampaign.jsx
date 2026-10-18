@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Send, Save, AlertTriangle, Loader2, Smartphone, Users, ShieldCheck, Clock, X, Zap } from 'lucide-react';
+import { Send, Save, AlertTriangle, Loader2, Smartphone, Users, ShieldCheck, Clock, X, Zap, Link2, Sparkles } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { isDeviceOnline, buildChannels } from '../lib/devices.js';
 import { useDevices } from '../hooks/useDevices.js';
@@ -9,6 +9,7 @@ import CampaignList from '../components/CampaignList.jsx';
 import QuickTestSmsModal from '../components/QuickTestSmsModal.jsx';
 import {
   BATCH_SIZE, SCHEDULE_CHUNK, DEFAULT_DAYS, SUFFIX_MARGIN, fetchAll, personalize, humanizeMessage,
+  expandLongestSpintax, generateShortCode,
   scheduleByChannel, scheduleStartTime, channelKey, estimatePerDay, clearUnsentItems,
 } from '../lib/campaigns.js';
 
@@ -30,7 +31,7 @@ function smsInfo(text, margin) {
 }
 
 const DEFAULT_FORM = {
-  title: '', message: '', humanize: true,
+  title: '', message: '', linkUrl: '', humanize: true,
   deviceMode: 'all', // 'all' | id do aparelho
   simMode: 'alternate', // 'alternate' | '0' | '1'
   minInterval: 45, maxInterval: 90, start: '08:30', end: '18:30',
@@ -192,18 +193,30 @@ export default function SendCampaign() {
   const sleepingDevices = targetDevices.filter((d) => !isDeviceOnline(d));
 
   // ----- Validação -----
-  // Nome de exemplo para contador e prévia; o contador considera o texto já personalizado
+  // Nome de exemplo para contador e prévia; o contador considera o texto já personalizado pelo maior ramo Spintax
   const sampleName = (recipients[0]?.name || '').trim().split(/\s+/)[0] || 'Marcos';
+  const usesLinkTag = /\{link\}/i.test(form.message);
+  const usesSpintax = /\{[^{}]+\|[^{}]+\}/.test(form.message);
+  const sampleShortUrl = usesLinkTag ? `${window.location.origin}/r/Ab3x9Q` : '';
   const margin = form.humanize ? SUFFIX_MARGIN : 0;
-  const info = useMemo(
-    () => smsInfo(personalize(form.message, { name: sampleName }), margin),
-    [form.message, sampleName, margin],
-  );
+
+  const info = useMemo(() => {
+    const worstCaseText = expandLongestSpintax(
+      String(form.message || '')
+        .replace(/\{nome\}/gi, sampleName)
+        .replace(/\{link\}/gi, sampleShortUrl)
+    );
+    return smsInfo(worstCaseText, margin);
+  }, [form.message, sampleName, sampleShortUrl, margin]);
+
   const preview = useMemo(
-    () => (form.humanize ? humanizeMessage(form.message, sampleName) : personalize(form.message, { name: sampleName })),
-    // previewSeed força novo código/espaçamento ao clicar em "gerar outro"
+    () =>
+      form.humanize
+        ? humanizeMessage(form.message, sampleName, undefined, sampleShortUrl)
+        : personalize(form.message, { name: sampleName }, sampleShortUrl),
+    // previewSeed força nova variação/código/espaçamento ao clicar em "gerar outra variação"
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [form.message, form.humanize, sampleName, previewSeed],
+    [form.message, form.humanize, sampleName, sampleShortUrl, previewSeed],
   );
   const minI = Number(form.minInterval);
   const maxI = Number(form.maxInterval);
@@ -217,6 +230,11 @@ export default function SendCampaign() {
   const errors = [];
   const warnings = [];
   if (!form.message.trim()) errors.push('Escreva a mensagem.');
+  if (usesLinkTag && !String(form.linkUrl || '').trim()) {
+    errors.push('Informe a URL de destino para a variável {link}.');
+  } else if (usesLinkTag && !/^https?:\/\//i.test(String(form.linkUrl || '').trim())) {
+    errors.push('A URL de destino para {link} deve começar com https:// ou http://.');
+  }
   if (recipients.length === 0) errors.push('Nenhum destinatário ativo selecionado.');
   if (!channels.length) errors.push(form.deviceMode === 'all' ? 'Nenhum aparelho cadastrado.' : 'Aparelho não encontrado.');
   if (!(minI > 0) || !(maxI > 0)) errors.push('Informe os intervalos mínimo e máximo.');
@@ -288,17 +306,41 @@ export default function SendCampaign() {
       const startFrom = scheduleStartTime(cfg);
       const times = scheduleByChannel(recipients.map((_, i) => channelKey(chOf(i).deviceId, chOf(i).slot)), cfg, startFrom);
 
-      const used = new Set(); // códigos já usados neste lote
+      const used = new Set(); // códigos de 3 letras já usados neste lote
+      const usedLinks = new Set(); // códigos curtos /r/:code já usados neste lote
+      const cleanDestUrl = String(form.linkUrl || '').trim();
+      const shortLinksToInsert = [];
+
       // Rascunho fica PAUSED até "Iniciar"; iniciar grava WAITING
-      const rows = recipients.map((c, i) => ({
-        user_id: user.id,
-        target_device_id: chOf(i).deviceId,
-        sim_slot: chOf(i).slot,
-        phone: c.phone,
-        message: form.humanize ? humanizeMessage(form.message, c.name, used) : personalize(form.message, c),
-        scheduled_for: times[i].toISOString(),
-        status: startNow ? 'WAITING' : 'PAUSED',
-      }));
+      const rows = recipients.map((c, i) => {
+        const ch = chOf(i);
+        let contactLinkUrl = '';
+        if (usesLinkTag && cleanDestUrl) {
+          const shortCode = generateShortCode(usedLinks);
+          contactLinkUrl = `${window.location.origin}/r/${shortCode}`;
+          shortLinksToInsert.push({
+            code: shortCode,
+            user_id: user.id,
+            phone: c.phone,
+            contact_name: c.name || null,
+            sim_slot: ch.slot,
+            target_device_id: ch.deviceId,
+            destination_url: cleanDestUrl,
+          });
+        }
+
+        return {
+          user_id: user.id,
+          target_device_id: ch.deviceId,
+          sim_slot: ch.slot,
+          phone: c.phone,
+          message: form.humanize
+            ? humanizeMessage(form.message, c.name, used, contactLinkUrl)
+            : personalize(form.message, c, contactLinkUrl),
+          scheduled_for: times[i].toISOString(),
+          status: startNow ? 'WAITING' : 'PAUSED',
+        };
+      });
       const firstRun = times.reduce((a, b) => (b < a ? b : a)).toISOString();
 
       // Ao iniciar, a 1ª mensagem de cada chip (se já devida) segue direto para sms_queue; o resto fica em sms_schedule
@@ -342,6 +384,20 @@ export default function SendCampaign() {
           .select('id').single();
         if (cErr) throw cErr;
         campaignId = newCampaignId = data.id;
+      }
+
+      // Grava os links curtos únicos por destinatário (se a campanha usar {link})
+      if (shortLinksToInsert.length > 0) {
+        for (let i = 0; i < shortLinksToInsert.length; i += SCHEDULE_CHUNK) {
+          const linkBatch = shortLinksToInsert
+            .slice(i, i + SCHEDULE_CHUNK)
+            .map((item) => ({ ...item, campaign_id: campaignId }));
+          const { error: lErr } = await supabase.from('short_links').insert(linkBatch);
+          if (lErr) {
+            console.warn('Aviso ao gravar short_links (verifique se a migration foi executada):', lErr.message);
+            break;
+          }
+        }
       }
 
       let done = 0;
@@ -596,12 +652,46 @@ export default function SendCampaign() {
                 <div>
                   <label className="label">Mensagem</label>
                   <textarea rows={6} className="input resize-none" value={form.message} onChange={set('message')}
-                    placeholder="Digite a mensagem. Use {nome} se quiser personalizar." />
-                  <div className="mt-1 flex flex-wrap items-center justify-between text-xs text-slate-400">
-                    <span>
-                      Opcional: <button type="button" className="text-accent"
-                        onClick={() => setForm({ ...form, message: form.message + '{nome}' })}>{'{nome}'}</button> insere o primeiro nome do contato.
-                    </span>
+                    placeholder="Ex.: {Olá|Oi|Tudo bem} {nome}, confira nossa novidade em {link}" />
+
+                  {/* Atalhos de personalização e variação natural de texto */}
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-slate-500">Inserir:</span>
+                      <button
+                        type="button"
+                        className="rounded-md border border-accent/30 bg-accent/10 px-2 py-0.5 font-mono text-[11px] text-accent hover:bg-accent/20 transition"
+                        onClick={() => setForm({ ...form, message: `${form.message}{nome}` })}
+                        title="Insere o primeiro nome do destinatário"
+                      >
+                        + {'{nome}'}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 font-mono text-[11px] text-slate-300 hover:border-accent/40 hover:text-accent transition"
+                        onClick={() => setForm({ ...form, message: `${form.message}{Olá|Oi|Tudo bem}` })}
+                        title="Alterna automaticamente a saudação entre cada envio"
+                      >
+                        + {'{Olá|Oi|Tudo bem}'}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 font-mono text-[11px] text-slate-300 hover:border-accent/40 hover:text-accent transition"
+                        onClick={() => setForm({ ...form, message: `${form.message}{opção 1|opção 2}` })}
+                        title="Insere bloco de variação dinâmica de palavras"
+                      >
+                        + {'{opção 1|opção 2}'}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-300 hover:bg-emerald-500/20 transition"
+                        onClick={() => setForm({ ...form, message: `${form.message}{link}` })}
+                        title="Insere um link curto único e rastreável para cada contato"
+                      >
+                        + {'{link}'}
+                      </button>
+                    </div>
+
                     <span className={info.parts > 1 ? 'text-yellow-400' : ''}>
                       {info.parts > 1
                         ? `${info.len} / ${info.limit} caracteres - ${info.parts} partes`
@@ -609,6 +699,33 @@ export default function SendCampaign() {
                       {info.unicode && ' · Unicode'}
                     </span>
                   </div>
+
+                  <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+                    <Sparkles size={12} className="text-accent shrink-0" />
+                    <span>
+                      Dica de comunicação natural: use <code className="text-slate-300">{'{palavra 1|palavra 2}'}</code> para variar termos automaticamente entre cada destinatário.
+                    </span>
+                  </p>
+
+                  {/* Campo de URL de destino quando {link} é usado na mensagem */}
+                  {(usesLinkTag || form.linkUrl) && (
+                    <div className="mt-3 rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] p-3 space-y-1.5">
+                      <label className="label flex items-center gap-1.5 text-emerald-300">
+                        <Link2 size={14} /> URL de destino para <code className="font-mono">{'{link}'}</code> (Link curto único por contato)
+                      </label>
+                      <input
+                        type="url"
+                        className="input text-xs font-mono"
+                        placeholder="https://wa.me/5534999999999 ou https://seusite.com.br/oferta"
+                        value={form.linkUrl || ''}
+                        onChange={set('linkUrl')}
+                      />
+                      <p className="text-[11px] text-slate-400">
+                        Cada contato receberá um endereço curto exclusivo (ex.: <code className="text-emerald-300">{window.location.origin}/r/Ab3x9Q</code>) que redireciona para o seu link e contabiliza os cliques na campanha.
+                      </p>
+                    </div>
+                  )}
+
                   {form.humanize && (
                     <p className="mt-1 text-xs text-slate-500">
                       Margem de {SUFFIX_MARGIN} caracteres reservada automaticamente para o código de segurança anti-filtro.
@@ -623,9 +740,9 @@ export default function SendCampaign() {
                     <div className="mt-2 rounded-lg bg-bg p-3 text-xs">
                       <div className="mb-1 flex items-center justify-between text-slate-500">
                         <span>Prévia da mensagem (como chega no aparelho)</span>
-                        {form.humanize && (
+                        {(form.humanize || usesSpintax) && (
                           <button type="button" className="text-accent hover:underline" onClick={() => setPreviewSeed((n) => n + 1)}>
-                            gerar outro código
+                            gerar outra variação
                           </button>
                         )}
                       </div>

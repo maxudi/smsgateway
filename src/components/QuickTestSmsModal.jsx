@@ -70,16 +70,19 @@ export default function QuickTestSmsModal({
   devices = [],
   singleSimOnly = false,
   remainingQuota = Infinity,
-  replyTo = null, // { id, sender_phone, message, device_id, sim_slot, received_at, contactName }
+  replyTo = null, // { id, sender_phone, message, device_id, sim_slot, received_at, contactName, contact }
+  onUnlockContact,
   onSent,
 }) {
   const isReply = Boolean(replyTo);
+  const isContactPaused = Boolean(replyTo?.contact?.opted_out);
 
   const [countryCode, setCountryCode] = useState('BR');
   const [phoneDigits, setPhoneDigits] = useState('');
   const [deviceId, setDeviceId] = useState('');
   const [simSlot, setSimSlot] = useState('0');
   const [message, setMessage] = useState(DEFAULT_TEST_MSG);
+  const [unlockOnReply, setUnlockOnReply] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [successInfo, setSuccessInfo] = useState(null);
@@ -94,6 +97,7 @@ export default function QuickTestSmsModal({
     if (!open) return;
     setError('');
     setSuccessInfo(null);
+    setUnlockOnReply(true);
 
     if (replyTo) {
       const parsed = parseIncomingPhone(replyTo.sender_phone);
@@ -193,11 +197,16 @@ export default function QuickTestSmsModal({
 
       if (qErr) throw qErr;
 
+      if (isReply && isContactPaused && unlockOnReply && onUnlockContact) {
+        await onUnlockContact();
+      }
+
       setSuccessInfo({
         id: data?.id,
         phone: `+${fullNumber}`,
         deviceName: selectedDevice?.name || deviceId,
         slot: (data?.sim_slot ?? effectiveSlot) + 1,
+        unlocked: Boolean(isReply && isContactPaused && unlockOnReply),
       });
 
       if (onSent) onSent();
@@ -384,6 +393,25 @@ export default function QuickTestSmsModal({
             </div>
           </div>
 
+          {isReply && isContactPaused && (
+            <label className="flex items-start gap-2.5 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-xs text-slate-200 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-0.5 accent-emerald-400 cursor-pointer"
+                checked={unlockOnReply}
+                onChange={(e) => setUnlockOnReply(e.target.checked)}
+              />
+              <div>
+                <div className="font-semibold text-emerald-300">
+                  Desbloquear este contato para futuras campanhas ao responder
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  Como você está respondendo à interação dele, ele voltará a ficar ativo na sua lista de envios em massa.
+                </div>
+              </div>
+            </label>
+          )}
+
           {error && (
             <div className="flex items-center gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5 text-xs text-danger">
               <AlertTriangle size={15} className="shrink-0" />
@@ -403,6 +431,11 @@ export default function QuickTestSmsModal({
                 Destino: <b className="font-mono text-white">{successInfo.phone}</b> · Aparelho:{' '}
                 <b className="text-white">{successInfo.deviceName}</b> · Chip: <b className="text-white">SIM {successInfo.slot}</b>
               </p>
+              {successInfo.unlocked && (
+                <p className="text-[11px] text-emerald-300 font-medium">
+                  🔓 Contato desbloqueado e liberado novamente para próximas campanhas!
+                </p>
+              )}
               <p className="text-[11px] text-slate-400">
                 Verifique o celular de destino em alguns segundos (ou acompanhe na aba <b>Fila</b> / <b>Histórico</b>).
               </p>

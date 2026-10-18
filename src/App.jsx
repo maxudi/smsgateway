@@ -19,6 +19,7 @@ import Docs from './pages/Docs.jsx';
 import Terms from './pages/Terms.jsx';
 import AdminManager from './pages/AdminManager.jsx';
 import LandingPage from './pages/LandingPage.jsx';
+import ShortLinkRedirect from './pages/ShortLinkRedirect.jsx';
 
 /** Layout autenticado: Sidebar + Navbar + conteúdo. */
 function ProtectedLayout() {
@@ -67,6 +68,7 @@ export default function App() {
   return (
     <Routes>
       {/* 1. Rotas Públicas e One-Page Raiz */}
+      <Route path="/r/:code" element={<ShortLinkRedirect />} />
       <Route path="/inicio" element={<LandingPage />} />
       <Route path="/home" element={<LandingPage />} />
       <Route path="/login" element={<Login />} />

@@ -24,12 +24,44 @@ export async function fetchAll(buildQuery) {
 
 // ---------- Mensagem ----------
 
-const firstName = (c) => (c.name || '').trim().split(/\s+/)[0] || '';
-export const personalize = (tpl, c) => tpl.replace(/\{nome\}/gi, firstName(c));
+const firstName = (c) => (c?.name || '').trim().split(/\s+/)[0] || '';
+
+/**
+ * Sorteia variações de texto (Spintax) no formato {opção 1|opção 2|opção 3}.
+ * Ignora tags simples sem barra como {nome} ou {link}.
+ */
+export function resolveSpintax(text) {
+  if (!text || !text.includes('|')) return text || '';
+  return String(text).replace(/\{([^{}]+\|[^{}]+)\}/g, (_, group) => {
+    const options = group.split('|').map((s) => s.trim()).filter(Boolean);
+    if (!options.length) return '';
+    return options[Math.floor(Math.random() * options.length)];
+  });
+}
+
+/**
+ * Expande cada bloco {opção 1|opção 2} pela maior alternativa para cálculo seguro de caracteres.
+ */
+export function expandLongestSpintax(text) {
+  if (!text || !text.includes('|')) return text || '';
+  return String(text).replace(/\{([^{}]+\|[^{}]+)\}/g, (_, group) => {
+    const options = group.split('|');
+    return options.reduce((a, b) => (b.length > a.length ? b : a), '');
+  });
+}
+
+export const personalize = (tpl, c, linkUrl = '') => {
+  let out = String(tpl || '').replace(/\{nome\}/gi, firstName(c));
+  if (linkUrl) {
+    out = out.replace(/\{link\}/gi, linkUrl);
+  }
+  return resolveSpintax(out);
+};
 
 // Espaços (1-2) + 3 letras = no máximo 5 caracteres reservados no fim do SMS
 export const SUFFIX_MARGIN = 5;
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const SHORT_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 
 /** Código de 3 letras em maiúsculas/minúsculas aleatórias; `used` garante unicidade dentro do lote. */
 export function generateCode(used) {
@@ -42,9 +74,23 @@ export function generateCode(used) {
   }
 }
 
-/** Personaliza {nome} e acrescenta espaçamento aleatório + código de 3 letras, tornando cada SMS diferente. */
-export function humanizeMessage(text, contactName = '', used) {
-  const body = personalize(text, { name: contactName }).trimEnd();
+/** Gera código curto único de 6 caracteres para o redirecionador /r/:code */
+export function generateShortCode(usedLinks) {
+  for (;;) {
+    const code = Array.from(
+      { length: 6 },
+      () => SHORT_ALPHABET[Math.floor(Math.random() * SHORT_ALPHABET.length)]
+    ).join('');
+    if (!usedLinks?.has(code)) {
+      usedLinks?.add(code);
+      return code;
+    }
+  }
+}
+
+/** Personaliza {nome}, {link} e Spintax, e acrescenta espaçamento aleatório + código de 3 letras. */
+export function humanizeMessage(text, contactName = '', used, linkUrl = '') {
+  const body = personalize(text, { name: contactName }, linkUrl).trimEnd();
   const padding = ' '.repeat(1 + Math.floor(Math.random() * 2));
   return `${body}${padding}${generateCode(used)}`;
 }

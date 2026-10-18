@@ -1,19 +1,63 @@
-import { useState } from 'react';
-import { Plus, Smartphone, Trash2, Lock } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Plus, Smartphone, Trash2, Lock, Check, Phone } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import Modal from '../components/Modal.jsx';
 import WebhookConfig from '../components/WebhookConfig.jsx';
+import ChipWarmupPanel from '../components/ChipWarmupPanel.jsx';
 import { isDeviceOnline } from '../lib/devices.js';
 import { useDevices } from '../hooks/useDevices.js';
+
+const LOCAL_CHIP_PHONES_KEY = 'smsmax_device_chip_phones_v1';
+
+function loadLocalChipPhones() {
+  try {
+    const raw = localStorage.getItem(LOCAL_CHIP_PHONES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLocalChipPhones(map) {
+  try {
+    localStorage.setItem(LOCAL_CHIP_PHONES_KEY, JSON.stringify(map));
+  } catch {
+    // ignore
+  }
+}
 
 export default function Devices() {
   const { user, plan, tenant, isMaster } = useAuth();
   const { t, lang } = useLanguage();
   const { devices: liveDevices, reload: load } = useDevices(user.id);
-  // Ordem alfabética fixa para os cartões não trocarem de lugar a cada ping
-  const devices = [...liveDevices].sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+  const [localPhones, setLocalPhones] = useState(() => loadLocalChipPhones());
+  const [phoneDrafts, setPhoneDrafts] = useState({});
+  const [savedChipKey, setSavedChipKey] = useState(null);
+
+  // Ordem alfabética fixa para os cartões não trocarem de lugar a cada ping,
+  // mesclando os telefones do banco com o fallback local
+  const devices = [...liveDevices]
+    .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
+    .map((d) => ({
+      ...d,
+      sim1_phone: d.sim1_phone || localPhones[d.id]?.sim1_phone || '',
+      sim2_phone: d.sim2_phone || localPhones[d.id]?.sim2_phone || '',
+    }));
+
+  useEffect(() => {
+    setPhoneDrafts((prev) => {
+      const next = { ...prev };
+      devices.forEach((d) => {
+        if (next[`${d.id}:1`] === undefined) next[`${d.id}:1`] = d.sim1_phone || '';
+        if (next[`${d.id}:2`] === undefined) next[`${d.id}:2`] = d.sim2_phone || '';
+      });
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveDevices.length]);
+
   const [open, setOpen] = useState(false);
   const [deviceId, setDeviceId] = useState('');
   const [name, setName] = useState('');
@@ -21,6 +65,34 @@ export default function Devices() {
 
   const maxSimSlots = isMaster ? 2 : Number(plan?.max_sim_slots ?? tenant?.max_sim_slots ?? 1);
   const singleSimOnly = !isMaster && maxSimSlots <= 1;
+
+  const saveChipPhone = async (devId, slotNum, rawValue) => {
+    const clean = String(rawValue || '').replace(/\D/g, '').slice(0, 13);
+    const field = slotNum === 1 ? 'sim1_phone' : 'sim2_phone';
+
+    // Salva localmente imediatamente
+    setLocalPhones((prev) => {
+      const next = {
+        ...prev,
+        [devId]: {
+          ...(prev[devId] || {}),
+          [field]: clean,
+        },
+      };
+      saveLocalChipPhones(next);
+      return next;
+    });
+
+    // Persiste no banco (se a coluna sim1_phone/sim2_phone existir)
+    await supabase
+      .from('devices')
+      .update({ [field]: clean || null })
+      .eq('id', devId);
+
+    setSavedChipKey(`${devId}:${slotNum}`);
+    setTimeout(() => setSavedChipKey(null), 1800);
+    load();
+  };
 
   const link = async (e) => {
     e.preventDefault();
@@ -106,11 +178,21 @@ export default function Devices() {
         </button>
       </div>
 
+      {/* Painel de Aquecimento / Conversa entre Chips (Maturador) */}
+      <ChipWarmupPanel
+        userId={user.id}
+        devices={devices}
+        singleSimOnly={singleSimOnly}
+      />
+
       {devices.length === 0 && <p className="text-slate-400">{t('devices.noDevices')}</p>}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {devices.map((d) => {
           const on = isDeviceOnline(d);
+          const draft1 = phoneDrafts[`${d.id}:1`] ?? d.sim1_phone ?? '';
+          const draft2 = phoneDrafts[`${d.id}:2`] ?? d.sim2_phone ?? '';
+
           return (
             <div key={d.id} className="card space-y-3">
               <div className="flex items-start justify-between">
@@ -126,25 +208,80 @@ export default function Devices() {
                   {on ? t('common.online') : t('common.offline')}
                 </span>
               </div>
+
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div className="rounded-lg bg-bg p-2">
+                {/* SIM 1 (Slot 0) */}
+                <div className="rounded-lg bg-bg p-2.5 space-y-1.5">
                   <div className="text-xs text-slate-500">{t('devices.sim1')} (Slot 0)</div>
-                  {d.sim1_operator || '—'}
+                  <div className="font-medium text-slate-200 text-xs">{d.sim1_operator || '—'}</div>
+                  <div className="pt-1 border-t border-white/5">
+                    <label className="text-[10px] text-slate-400 flex items-center gap-1 mb-1">
+                      <Phone size={10} className="text-accent" /> Nº deste chip (DDD+Nº)
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="tel"
+                        className="input py-1 px-2 text-xs font-mono"
+                        placeholder="34999990000"
+                        value={draft1}
+                        onChange={(e) =>
+                          setPhoneDrafts((prev) => ({ ...prev, [`${d.id}:1`]: e.target.value }))
+                        }
+                        onBlur={(e) => saveChipPhone(d.id, 1, e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => saveChipPhone(d.id, 1, draft1)}
+                        className="rounded-lg border border-accent/30 bg-accent/15 p-1.5 text-accent hover:bg-accent hover:text-bg transition shrink-0"
+                        title="Salvar número do SIM 1"
+                      >
+                        <Check size={12} className={savedChipKey === `${d.id}:1` ? 'text-emerald-400' : ''} />
+                      </button>
+                    </div>
+                  </div>
                 </div>
+
+                {/* SIM 2 (Slot 1) */}
                 {singleSimOnly ? (
-                  <div className="rounded-lg bg-bg/50 border border-white/5 p-2 opacity-60" title="Seu plano atual monitora apenas 1 chip (SIM 1). Faça upgrade para liberar Dual-SIM.">
+                  <div className="rounded-lg bg-bg/50 border border-white/5 p-2.5 opacity-60" title="Seu plano atual monitora apenas 1 chip (SIM 1). Faça upgrade para liberar Dual-SIM.">
                     <div className="flex items-center gap-1 text-xs text-slate-500">
                       <Lock size={11} /> {t('devices.sim2')} (Slot 1)
                     </div>
-                    <div className="text-xs text-slate-500">Bloqueado no plano</div>
+                    <div className="text-xs text-slate-500 mt-1">Bloqueado no plano</div>
                   </div>
                 ) : (
-                  <div className="rounded-lg bg-bg p-2">
+                  <div className="rounded-lg bg-bg p-2.5 space-y-1.5">
                     <div className="text-xs text-slate-500">{t('devices.sim2')} (Slot 1)</div>
-                    {d.sim2_operator || '—'}
+                    <div className="font-medium text-slate-200 text-xs">{d.sim2_operator || '—'}</div>
+                    <div className="pt-1 border-t border-white/5">
+                      <label className="text-[10px] text-slate-400 flex items-center gap-1 mb-1">
+                        <Phone size={10} className="text-accent" /> Nº deste chip (DDD+Nº)
+                      </label>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="tel"
+                          className="input py-1 px-2 text-xs font-mono"
+                          placeholder="34999991111"
+                          value={draft2}
+                          onChange={(e) =>
+                            setPhoneDrafts((prev) => ({ ...prev, [`${d.id}:2`]: e.target.value }))
+                          }
+                          onBlur={(e) => saveChipPhone(d.id, 2, e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => saveChipPhone(d.id, 2, draft2)}
+                          className="rounded-lg border border-accent/30 bg-accent/15 p-1.5 text-accent hover:bg-accent hover:text-bg transition shrink-0"
+                          title="Salvar número do SIM 2"
+                        >
+                          <Check size={12} className={savedChipKey === `${d.id}:2` ? 'text-emerald-400' : ''} />
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
+
               <WebhookConfig device={d} userId={user.id} />
               <div className="flex items-center justify-between text-xs text-slate-500">
                 <span>{t('devices.lastPing')} {d.last_ping ? new Date(d.last_ping).toLocaleString(lang === 'pt' ? 'pt-BR' : 'en-US') : t('common.never')}</span>
