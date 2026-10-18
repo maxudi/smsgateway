@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard.jsx';
 import Devices from './pages/Devices.jsx';
 import Contacts from './pages/Contacts.jsx';
 import SendCampaign from './pages/SendCampaign.jsx';
+import Inbox from './pages/Inbox.jsx';
 import CampaignsManager from './pages/CampaignsManager.jsx';
 import QueueManager from './pages/QueueManager.jsx';
 import PlansPricing from './pages/PlansPricing.jsx';
@@ -86,6 +87,8 @@ export default function App() {
         <Route path="/dispositivos" element={<Devices />} />
         <Route path="/contatos" element={<Contacts />} />
         <Route path="/disparar" element={<SendCampaign />} />
+        <Route path="/recebidas" element={<Inbox />} />
+        <Route path="/inbox" element={<Inbox />} />
         <Route path="/campanhas" element={<CampaignsManager />} />
         <Route path="/fila" element={<QueueManager />} />
         <Route path="/planos" element={<PlansPricing />} />

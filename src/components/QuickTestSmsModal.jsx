@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Send, Smartphone, Layers, X, CheckCircle2, AlertTriangle, Loader2, Zap } from 'lucide-react';
+import { Send, Smartphone, Layers, X, CheckCircle2, AlertTriangle, Loader2, Zap, Reply, MessageSquare } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { isDeviceOnline } from '../lib/devices.js';
 
@@ -37,6 +37,30 @@ function applyPhoneMask(rawDigits, country) {
   return { formatted: result, digits };
 }
 
+/** Detecta país (DDI) e dígitos locais a partir de um telefone recebido (ex: "+5534999990000" ou "34999990000") */
+function parseIncomingPhone(rawPhone) {
+  const clean = String(rawPhone || '').replace(/\D/g, '');
+  if (!clean) return { countryCode: 'BR', localDigits: '' };
+
+  // Ordena DDIs do maior para o menor (ex: 598 antes de 55/1) para casar prefixos exatos
+  const sortedByDdi = [...COUNTRIES].sort((a, b) => b.ddi.length - a.ddi.length);
+  for (const c of sortedByDdi) {
+    if (clean.startsWith(c.ddi)) {
+      const rest = clean.slice(c.ddi.length);
+      if (rest.length >= c.minDigits && rest.length <= c.maxDigits) {
+        return { countryCode: c.code, localDigits: rest };
+      }
+    }
+  }
+
+  // Se vier sem DDI com 10 ou 11 dígitos, assume Brasil
+  if (clean.length === 10 || clean.length === 11) {
+    return { countryCode: 'BR', localDigits: clean };
+  }
+
+  return { countryCode: 'BR', localDigits: clean.slice(-11) };
+}
+
 const DEFAULT_TEST_MSG = '[Max Netminas] Teste de conexao do Gateway SMS realizado com sucesso!';
 
 export default function QuickTestSmsModal({
@@ -46,8 +70,11 @@ export default function QuickTestSmsModal({
   devices = [],
   singleSimOnly = false,
   remainingQuota = Infinity,
+  replyTo = null, // { id, sender_phone, message, device_id, sim_slot, received_at, contactName }
   onSent,
 }) {
+  const isReply = Boolean(replyTo);
+
   const [countryCode, setCountryCode] = useState('BR');
   const [phoneDigits, setPhoneDigits] = useState('');
   const [deviceId, setDeviceId] = useState('');
@@ -62,19 +89,45 @@ export default function QuickTestSmsModal({
     [countryCode]
   );
 
-  // Seleciona automaticamente o primeiro aparelho online (ou o primeiro da lista)
+  // Ao abrir o modal, configura para Resposta (se replyTo existir) ou para Teste Rápido
   useEffect(() => {
     if (!open) return;
     setError('');
     setSuccessInfo(null);
-    if (devices.length > 0 && !devices.some((d) => d.id === deviceId)) {
-      const firstOnline = devices.find((d) => isDeviceOnline(d));
-      setDeviceId((firstOnline || devices[0]).id);
+
+    if (replyTo) {
+      const parsed = parseIncomingPhone(replyTo.sender_phone);
+      setCountryCode(parsed.countryCode);
+      setPhoneDigits(parsed.localDigits);
+
+      if (replyTo.device_id && devices.some((d) => d.id === replyTo.device_id)) {
+        setDeviceId(replyTo.device_id);
+      } else if (devices.length > 0) {
+        const firstOnline = devices.find((d) => isDeviceOnline(d));
+        setDeviceId((firstOnline || devices[0]).id);
+      }
+
+      if (singleSimOnly) {
+        setSimSlot('0');
+      } else {
+        setSimSlot(String(replyTo.sim_slot ?? 0));
+      }
+
+      setMessage('');
+    } else {
+      if (devices.length > 0 && !devices.some((d) => d.id === deviceId)) {
+        const firstOnline = devices.find((d) => isDeviceOnline(d));
+        setDeviceId((firstOnline || devices[0]).id);
+      }
+      if (singleSimOnly) {
+        setSimSlot('0');
+      }
+      if (!message) {
+        setMessage(DEFAULT_TEST_MSG);
+      }
     }
-    if (singleSimOnly) {
-      setSimSlot('0');
-    }
-  }, [open, devices, deviceId, singleSimOnly]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, replyTo, devices, singleSimOnly]);
 
   if (!open) return null;
 
@@ -105,7 +158,7 @@ export default function QuickTestSmsModal({
     setSuccessInfo(null);
 
     if (!devices.length || !deviceId) {
-      setError('Cadastre e conecte pelo menos 1 aparelho Android antes de enviar o teste.');
+      setError('Cadastre e conecte pelo menos 1 aparelho Android antes de enviar.');
       return;
     }
     if (masked.digits.length < country.minDigits) {
@@ -113,7 +166,7 @@ export default function QuickTestSmsModal({
       return;
     }
     if (!message.trim()) {
-      setError('Digite o texto da mensagem de teste.');
+      setError(isReply ? 'Digite a mensagem de resposta.' : 'Digite o texto da mensagem de teste.');
       return;
     }
     if (remainingQuota <= 0) {
@@ -149,7 +202,7 @@ export default function QuickTestSmsModal({
 
       if (onSent) onSent();
     } catch (err) {
-      setError(err?.message || 'Não foi possível enfileirar o SMS de teste.');
+      setError(err?.message || 'Não foi possível enfileirar o SMS.');
     } finally {
       setBusy(false);
     }
@@ -162,12 +215,16 @@ export default function QuickTestSmsModal({
         <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
           <div className="flex items-center gap-2.5">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/15 text-accent border border-accent/30">
-              <Zap size={20} />
+              {isReply ? <Reply size={20} /> : <Zap size={20} />}
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white">Envio Rápido de SMS de Teste</h2>
+              <h2 className="text-lg font-bold text-white">
+                {isReply ? 'Responder SMS Recebido' : 'Envio Rápido de SMS de Teste'}
+              </h2>
               <p className="text-xs text-slate-400">
-                Dispara imediatamente para a fila do aparelho sem depender de janela de horário.
+                {isReply
+                  ? 'Envia sua resposta imediatamente pelo aparelho e chip selecionados.'
+                  : 'Dispara imediatamente para a fila do aparelho sem depender de janela de horário.'}
               </p>
             </div>
           </div>
@@ -182,6 +239,26 @@ export default function QuickTestSmsModal({
         </div>
 
         <form onSubmit={handleSendTest} className="mt-5 space-y-4">
+          {/* Bloco da mensagem original quando estiver respondendo */}
+          {isReply && (
+            <div className="rounded-xl border border-white/10 bg-bg/80 p-3.5 text-xs space-y-1">
+              <div className="flex items-center justify-between text-slate-400">
+                <span className="flex items-center gap-1.5 font-semibold text-accent">
+                  <MessageSquare size={13} />
+                  Mensagem recebida de {replyTo.contactName ? `${replyTo.contactName} (${replyTo.sender_phone})` : replyTo.sender_phone}
+                </span>
+                {replyTo.received_at && (
+                  <span className="text-[11px] text-slate-500">
+                    {new Date(replyTo.received_at).toLocaleString('pt-BR')}
+                  </span>
+                )}
+              </div>
+              <p className="text-slate-200 italic whitespace-pre-wrap break-words pt-1">
+                “{replyTo.message}”
+              </p>
+            </div>
+          )}
+
           {/* País + Número com Máscara */}
           <div>
             <label className="label">Número de destino (com DDI do país)</label>
@@ -206,7 +283,7 @@ export default function QuickTestSmsModal({
                   placeholder={country.placeholder}
                   value={masked.formatted}
                   onChange={handlePhoneChange}
-                  autoFocus
+                  autoFocus={!isReply}
                 />
               </div>
             </div>
@@ -275,24 +352,31 @@ export default function QuickTestSmsModal({
             </div>
           )}
 
-          {/* Mensagem de Teste */}
+          {/* Mensagem de Teste / Resposta */}
           <div>
             <div className="flex items-center justify-between">
-              <label className="label">Mensagem de teste</label>
-              <button
-                type="button"
-                onClick={() => setMessage(DEFAULT_TEST_MSG)}
-                className="text-[11px] text-accent hover:underline"
-              >
-                Restaurar texto padrão
-              </button>
+              <label className="label">{isReply ? 'Sua mensagem de resposta' : 'Mensagem de teste'}</label>
+              {!isReply && (
+                <button
+                  type="button"
+                  onClick={() => setMessage(DEFAULT_TEST_MSG)}
+                  className="text-[11px] text-accent hover:underline"
+                >
+                  Restaurar texto padrão
+                </button>
+              )}
             </div>
             <textarea
               rows={3}
               className="input resize-none text-sm"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Digite uma mensagem rápida para testar seu gateway..."
+              placeholder={
+                isReply
+                  ? 'Digite aqui sua resposta para este número...'
+                  : 'Digite uma mensagem rápida para testar seu gateway...'
+              }
+              autoFocus={isReply}
             />
             <div className="mt-1 flex justify-between text-[11px] text-slate-500">
               <span>Disparo direto sem sufixo de campanha</span>
@@ -311,7 +395,9 @@ export default function QuickTestSmsModal({
             <div className="rounded-xl border border-success/30 bg-success/10 p-3.5 text-xs text-slate-200 space-y-1">
               <div className="flex items-center gap-2 font-semibold text-success text-sm">
                 <CheckCircle2 size={16} className="shrink-0" />
-                <span>SMS de teste enviado para a fila imediata!</span>
+                <span>
+                  {isReply ? 'Resposta enviada para a fila imediata!' : 'SMS de teste enviado para a fila imediata!'}
+                </span>
               </div>
               <p className="text-slate-300">
                 Destino: <b className="font-mono text-white">{successInfo.phone}</b> · Aparelho:{' '}
@@ -332,8 +418,8 @@ export default function QuickTestSmsModal({
               disabled={busy || !devices.length}
               className="btn-primary text-xs px-5 py-2.5 shadow-lg shadow-accent/20"
             >
-              {busy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-              {busy ? 'Enviando teste...' : 'Disparar Teste Agora'}
+              {busy ? <Loader2 size={15} className="animate-spin" /> : isReply ? <Reply size={15} /> : <Send size={15} />}
+              {busy ? 'Enviando...' : isReply ? 'Enviar Resposta Agora' : 'Disparar Teste Agora'}
             </button>
           </div>
         </form>
@@ -341,4 +427,3 @@ export default function QuickTestSmsModal({
     </div>
   );
 }
-

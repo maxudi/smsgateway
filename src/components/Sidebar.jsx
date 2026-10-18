@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Key, Smartphone, Users, Send, ListChecks, CreditCard, MessageSquare, LogOut, Megaphone, UserCircle, BookOpen, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, Key, Smartphone, Users, Send, ListChecks, CreditCard, Inbox, LogOut, Megaphone, UserCircle, BookOpen, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 
@@ -12,6 +12,7 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
     { to: '/dispositivos', label: t('nav.devices'), icon: Smartphone },
     { to: '/contatos', label: t('nav.contacts'), icon: Users },
     { to: '/disparar', label: t('nav.sendSms'), icon: Send },
+    { to: '/recebidas', label: t('nav.inbox'), icon: Inbox },
     { to: '/campanhas', label: t('nav.campaigns'), icon: Megaphone },
     { to: '/fila', label: t('nav.queue'), icon: ListChecks },
     { to: '/planos', label: t('nav.plans'), icon: CreditCard },

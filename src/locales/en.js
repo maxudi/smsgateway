@@ -34,6 +34,7 @@ export const en = {
     devices: 'Devices',
     contacts: 'Contacts',
     sendSms: 'Send SMS',
+    inbox: 'Inbox (Received)',
     campaigns: 'Campaigns',
     queue: 'Queue / History',
     plans: 'Plans',

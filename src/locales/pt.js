@@ -34,6 +34,7 @@ export const pt = {
     devices: 'Dispositivos',
     contacts: 'Contatos',
     sendSms: 'Disparar SMS',
+    inbox: 'Recebidas (Inbox)',
     campaigns: 'Campanhas',
     queue: 'Fila/Histórico',
     plans: 'Planos',

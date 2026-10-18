@@ -829,5 +829,116 @@ BEGIN
 END;
 $function$;
 
+-- ============================================================================
+-- 11. CAIXA DE ENTRADA (sms_inbound): MARCAR COMO IMPORTANTE, EXCLUIR E ISOLAMENTO
+-- ============================================================================
+ALTER TABLE public.sms_inbound
+  ADD COLUMN IF NOT EXISTS is_starred boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES auth.users(id);
+
+CREATE INDEX IF NOT EXISTS idx_sms_inbound_device_id ON public.sms_inbound(device_id);
+CREATE INDEX IF NOT EXISTS idx_sms_inbound_user_id ON public.sms_inbound(user_id);
+
+-- Backfill do user_id nas mensagens recebidas já existentes a partir do dono do aparelho
+UPDATE public.sms_inbound i
+SET user_id = d.user_id
+FROM public.devices d
+WHERE i.device_id = d.id
+  AND i.user_id IS NULL
+  AND d.user_id IS NOT NULL;
+
+-- Atualiza a função de entrada de SMS para gravar automaticamente o user_id do dono do aparelho
+CREATE OR REPLACE FUNCTION public.enforce_inbound_sim_slot_limit()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_owner_user_id uuid;
+  v_is_master     boolean := false;
+  v_max_slots     integer := 1;
+BEGIN
+  SELECT d.user_id
+    INTO v_owner_user_id
+    FROM public.devices d
+   WHERE d.id = NEW.device_id
+   LIMIT 1;
+
+  IF v_owner_user_id IS NOT NULL THEN
+    NEW.user_id := COALESCE(NEW.user_id, v_owner_user_id);
+
+    SELECT
+      COALESCE(t.is_master, false),
+      COALESCE(t.max_sim_slots, 1)
+    INTO v_is_master, v_max_slots
+    FROM public.tenants t
+    JOIN auth.users u ON lower(u.email) = lower(t.email)
+    WHERE u.id = v_owner_user_id
+    ORDER BY t.is_master DESC
+    LIMIT 1;
+
+    -- Se o plano só permite monitorar 1 chip (SIM 1 / slot 0), ignora eventos do SIM 2 (slot > 0)
+    IF NOT COALESCE(v_is_master, false) AND COALESCE(v_max_slots, 1) <= 1 AND COALESCE(NEW.sim_slot, 0) > 0 THEN
+      RETURN NULL;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+-- Políticas RLS para garantir isolamento total por usuário/tenant em sms_inbound
+ALTER TABLE public.sms_inbound ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  DROP POLICY IF EXISTS "Users can view their own inbound sms" ON public.sms_inbound;
+  CREATE POLICY "Users can view their own inbound sms"
+    ON public.sms_inbound
+    FOR SELECT
+    TO authenticated
+    USING (
+      user_id = auth.uid()
+      OR device_id IN (SELECT id FROM public.devices WHERE user_id = auth.uid())
+    );
+
+  DROP POLICY IF EXISTS "Users can update their own inbound sms" ON public.sms_inbound;
+  CREATE POLICY "Users can update their own inbound sms"
+    ON public.sms_inbound
+    FOR UPDATE
+    TO authenticated
+    USING (
+      user_id = auth.uid()
+      OR device_id IN (SELECT id FROM public.devices WHERE user_id = auth.uid())
+    )
+    WITH CHECK (
+      user_id = auth.uid()
+      OR device_id IN (SELECT id FROM public.devices WHERE user_id = auth.uid())
+    );
+
+  DROP POLICY IF EXISTS "Users can delete their own inbound sms" ON public.sms_inbound;
+  CREATE POLICY "Users can delete their own inbound sms"
+    ON public.sms_inbound
+    FOR DELETE
+    TO authenticated
+    USING (
+      user_id = auth.uid()
+      OR device_id IN (SELECT id FROM public.devices WHERE user_id = auth.uid())
+    );
+
+  -- Garante que o APK Android possa continuar inserindo os SMS recebidos
+  DROP POLICY IF EXISTS "Allow APK insert inbound sms" ON public.sms_inbound;
+  CREATE POLICY "Allow APK insert inbound sms"
+    ON public.sms_inbound
+    FOR INSERT
+    TO anon, authenticated
+    WITH CHECK (true);
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
 COMMIT;
+
+
 
